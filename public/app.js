@@ -85,7 +85,7 @@ function showToast(text) { toast.textContent = text; toast.classList.add('show')
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${protocol}://${location.host}`);
+  socket = new WebSocket(`${protocol}://${location.host}?room=doodle`);
   socket.addEventListener('open', () => { connection.classList.add('online'); connectionText.textContent = 'Live & connected'; });
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
