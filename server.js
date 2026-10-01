@@ -14,11 +14,17 @@ const tankPlayers = new Map();
 const bullets = [];
 let nextTankNumber = 1;
 const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
-const tankObstacles = [
+const TANK_MAP_HALF_SIZE = 120;
+const sectorObstacles = [
   { x: -20, z: -13, w: 15, d: 10 }, { x: 15, z: -18, w: 9, d: 18 },
   { x: -4, z: 3, w: 13, d: 13 }, { x: -25, z: 19, w: 10, d: 15 },
   { x: 23, z: 19, w: 14, d: 9 }, { x: 30, z: -4, w: 7, d: 8 }
 ];
+const tankObstacles = [-80, 0, 80].flatMap(offsetX =>
+  [-80, 0, 80].flatMap(offsetZ =>
+    sectorObstacles.map(box => ({ ...box, x: box.x + offsetX, z: box.z + offsetZ }))
+  )
+);
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -70,10 +76,10 @@ function tankSnapshot() {
 
 function randomSpawn() {
   for (let attempt = 0; attempt < 50; attempt++) {
-    const point = { x: Math.random() * 68 - 34, z: Math.random() * 68 - 34 };
+    const point = { x: Math.random() * 228 - 114, z: Math.random() * 228 - 114 };
     if (!tankObstacles.some(box => Math.abs(point.x - box.x) < box.w / 2 + 3 && Math.abs(point.z - box.z) < box.d / 2 + 3)) return point;
   }
-  return { x: 34, z: 34 };
+  return { x: 114, z: 114 };
 }
 
 function tankBroadcast(message) {
@@ -171,13 +177,13 @@ const gameLoop = setInterval(() => {
     player.heading += player.input.turn * dt * 2.1;
     player.turret = player.heading + player.input.aimX * 1.3;
     const next = { x: player.x + Math.sin(player.heading) * player.input.forward * dt * 9, z: player.z + Math.cos(player.heading) * player.input.forward * dt * 9 };
-    const blocked = Math.abs(next.x) > 38 || Math.abs(next.z) > 38 || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + 1.25 && Math.abs(next.z - box.z) < box.d / 2 + 1.25);
+    const blocked = Math.abs(next.x) > TANK_MAP_HALF_SIZE - 2 || Math.abs(next.z) > TANK_MAP_HALF_SIZE - 2 || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + 1.25 && Math.abs(next.z - box.z) < box.d / 2 + 1.25);
     if (!blocked) Object.assign(player, next);
   }
   for (let index = bullets.length - 1; index >= 0; index--) {
     const bullet = bullets[index];
     bullet.x += bullet.vx * dt; bullet.z += bullet.vz * dt; bullet.life -= dt;
-    const hitsWall = Math.abs(bullet.x) > 40 || Math.abs(bullet.z) > 40 || tankObstacles.some(box => Math.abs(bullet.x - box.x) < box.w / 2 && Math.abs(bullet.z - box.z) < box.d / 2);
+    const hitsWall = Math.abs(bullet.x) > TANK_MAP_HALF_SIZE || Math.abs(bullet.z) > TANK_MAP_HALF_SIZE || tankObstacles.some(box => Math.abs(bullet.x - box.x) < box.w / 2 && Math.abs(bullet.z - box.z) < box.d / 2);
     const victim = [...tankPlayers.values()].find(player => player.alive && player.id !== bullet.ownerId && Math.hypot(player.x - bullet.x, player.z - bullet.z) < 1.4);
     if (victim) {
       victim.alive = false; victim.respawnAt = now + 3000;
