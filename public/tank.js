@@ -5,10 +5,14 @@ const connection = document.querySelector('#connection');
 const respawn = document.querySelector('#respawn');
 const respawnCount = respawn.querySelector('b');
 const messageBox = document.querySelector('#message');
-const obstacles = [
+const minimap = document.querySelector('#minimap');
+const mapCtx = minimap.getContext('2d');
+const MAP_HALF_SIZE = 120;
+const sectorObstacles = [
   {x:-20,z:-13,w:15,d:10,h:8},{x:15,z:-18,w:9,d:18,h:11},{x:-4,z:3,w:13,d:13,h:7},
   {x:-25,z:19,w:10,d:15,h:10},{x:23,z:19,w:14,d:9,h:6},{x:30,z:-4,w:7,d:8,h:5}
 ];
+const obstacles = [-80,0,80].flatMap(offsetX=>[-80,0,80].flatMap(offsetZ=>sectorObstacles.map(box=>({...box,x:box.x+offsetX,z:box.z+offsetZ}))));
 const keys = new Set();
 let socket, selfId, state = { players:[], bullets:[] }, last = performance.now(), reconnectTimer, lastSent = 0, deathAt = 0;
 let aim = {x:0,y:0};
@@ -43,9 +47,18 @@ function tank(player,camera){
 function drawGrid(camera){
   ctx.fillStyle='#171f18';ctx.fillRect(0,0,innerWidth,innerHeight);
   const sky=ctx.createLinearGradient(0,0,0,innerHeight*.7);sky.addColorStop(0,'#7d8b7b');sky.addColorStop(1,'#303b31');ctx.fillStyle=sky;ctx.fillRect(0,0,innerWidth,innerHeight*.53);
-  const points=[project(-40,0,-40,camera),project(40,0,-40,camera),project(40,0,40,camera),project(-40,0,40,camera)];poly(points,'#333d32','#d8ff3e');
+  const points=[project(-MAP_HALF_SIZE,0,-MAP_HALF_SIZE,camera),project(MAP_HALF_SIZE,0,-MAP_HALF_SIZE,camera),project(MAP_HALF_SIZE,0,MAP_HALF_SIZE,camera),project(-MAP_HALF_SIZE,0,MAP_HALF_SIZE,camera)];poly(points,'#333d32','#d8ff3e');
   ctx.strokeStyle='rgba(203,221,194,.11)';ctx.lineWidth=1;
-  for(let n=-40;n<=40;n+=5){let a=project(n,.02,-40,camera),b=project(n,.02,40,camera);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();a=project(-40,.02,n,camera);b=project(40,.02,n,camera);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+  for(let n=-MAP_HALF_SIZE;n<=MAP_HALF_SIZE;n+=10){let a=project(n,.02,-MAP_HALF_SIZE,camera),b=project(n,.02,MAP_HALF_SIZE,camera);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();a=project(-MAP_HALF_SIZE,.02,n,camera);b=project(MAP_HALF_SIZE,.02,n,camera);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+}
+function drawMinimap(){
+  const size=minimap.width, scale=size/(MAP_HALF_SIZE*2), point=value=>(value+MAP_HALF_SIZE)*scale;
+  mapCtx.clearRect(0,0,size,size);mapCtx.fillStyle='#151d16';mapCtx.fillRect(0,0,size,size);
+  mapCtx.strokeStyle='rgba(216,255,62,.1)';mapCtx.lineWidth=1;
+  for(let n=-80;n<=80;n+=80){const p=point(n);mapCtx.beginPath();mapCtx.moveTo(p,0);mapCtx.lineTo(p,size);mapCtx.moveTo(0,p);mapCtx.lineTo(size,p);mapCtx.stroke();}
+  mapCtx.fillStyle='#596558';for(const box of obstacles)mapCtx.fillRect(point(box.x-box.w/2),point(box.z-box.d/2),box.w*scale,box.d*scale);
+  for(const player of state.players){if(!player.alive)continue;const x=point(player.x),y=point(player.z),isMe=player.id===selfId;mapCtx.save();mapCtx.translate(x,y);mapCtx.rotate(-player.heading);mapCtx.beginPath();mapCtx.moveTo(0,-(isMe?8:6));mapCtx.lineTo(isMe?6:5,isMe?7:5);mapCtx.lineTo(-(isMe?6:5),isMe?7:5);mapCtx.closePath();mapCtx.fillStyle=isMe?'#d8ff3e':player.color;mapCtx.shadowColor=mapCtx.fillStyle;mapCtx.shadowBlur=isMe?10:4;mapCtx.fill();mapCtx.restore();}
+  mapCtx.strokeStyle='rgba(216,255,62,.65)';mapCtx.lineWidth=2;mapCtx.strokeRect(1,1,size-2,size-2);
 }
 function render(){
   const player=me(), camera={x:player?.x||0,z:player?.z||0,angle:-(player?.turret||0)-Math.PI/2,height:13};
@@ -53,6 +66,7 @@ function render(){
   const items=[...obstacles.map(o=>({depth:project(o.x,0,o.z,camera).depth,draw:()=>box(o,camera)})),...state.players.filter(p=>p.alive).map(p=>({depth:project(p.x,0,p.z,camera).depth,draw:()=>tank(p,camera)}))];
   items.sort((a,b)=>b.depth-a.depth).forEach(item=>item.draw());
   for(const bullet of state.bullets){const p=project(bullet.x,.8,bullet.z,camera);ctx.beginPath();ctx.arc(p.x,p.y,Math.max(2,p.scale*.15),0,Math.PI*2);ctx.fillStyle='#fff4a1';ctx.shadowColor='#d8ff3e';ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;}
+  drawMinimap();
   requestAnimationFrame(render);
 }
 function send(type,data={}){if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type,...data}));}
