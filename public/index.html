@@ -4,37 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f6f1e7">
-  <title>Board</title>
-  <link rel="stylesheet" href="/styles.css">
+  <title>Arcade</title>
 </head>
 <body>
-  <header class="topbar">
-    <a class="app-link" href="/tank.html" aria-label="Open tank game" title="Open tank game">▰</a>
-    <div class="connection"><span id="connectionDot"></span><span id="connectionText">Connecting…</span></div>
-    <button id="clearButton" class="clear-button" type="button" title="Clear the board for everyone">Clear board</button>
-  </header>
-
-  <main>
-    <section class="workspace">
-      <aside class="tools" aria-label="Drawing tools">
-        <button class="tool active" data-tool="pen" type="button" aria-label="Pen tool"><span>✎</span><small>Pen</small></button>
-        <button class="tool" data-tool="eraser" type="button" aria-label="Eraser tool"><span>◇</span><small>Eraser</small></button>
-        <label class="size-control"><small>Size</small><input id="size" type="range" min="1" max="24" value="4" aria-label="Brush size"></label>
-      </aside>
-
-      <div class="board-wrap">
-        <canvas id="board" aria-label="Shared drawing board"></canvas>
-        <div id="cursors" class="cursors" aria-hidden="true"></div>
-      </div>
-
-      <aside class="people-panel">
-        <div class="people-heading"><span>In the room</span><span id="peopleCount" class="count">0</span></div>
-        <div id="people" class="people"></div>
-      </aside>
-    </section>
-  </main>
-
-  <div id="toast" class="toast" role="status"></div>
-  <script src="/app.js"></script>
+  <div id="root"></div>
+  <script src="/react-app.js" defer></script>
 </body>
 </html>

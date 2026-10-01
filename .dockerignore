@@ -1,0 +1,15 @@
+.git
+.gitignore
+.agents
+.codex
+node_modules
+npm-debug.log*
+*.log
+.env
+.env.*
+!.env.example
+coverage
+Dockerfile*
+compose*.yaml
+compose*.yml
+README.md

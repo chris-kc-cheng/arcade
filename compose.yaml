@@ -1,0 +1,10 @@
+services:
+  arcade:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arcade:latest
+    environment:
+      PORT: 3000
+    expose:
+      - "3000"

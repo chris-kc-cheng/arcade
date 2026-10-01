@@ -1,0 +1,4 @@
+arcade.example.com {
+    encode zstd gzip
+    reverse_proxy arcade:3000
+}

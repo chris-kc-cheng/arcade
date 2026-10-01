@@ -1,24 +1,41 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const { cleanPoint } = require('./lib/protocol');
 
 const PORT = Number(process.env.PORT) || 3000;
+const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
+const reloadClients = new Set();
 const colors = ['#ff6b6b', '#5c7cfa', '#20c997', '#f59f00', '#cc5de8', '#12b886'];
 const users = new Map();
 const history = [];
+const chatHistory = [];
 let nextUserNumber = 1;
 const tankPlayers = new Map();
 const bullets = [];
 let nextTankNumber = 1;
 const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
+// Keep the whole tank, including its short cannon, clear of solid geometry.
+const tankRadius = 0.9;
 const tankObstacles = [
   { x: -20, z: -13, w: 15, d: 10 }, { x: 15, z: -18, w: 9, d: 18 },
   { x: -4, z: 3, w: 13, d: 13 }, { x: -25, z: 19, w: 10, d: 15 },
   { x: 23, z: 19, w: 14, d: 9 }, { x: 30, z: -4, w: 7, d: 8 }
 ];
+const penaltyClients = new Map();
+const penaltyPlayers = [];
+const penaltyColors = ['#ed4f45', '#3b71e8'];
+const penaltyZones = new Set(['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right']);
+let nextPenaltyNumber = 1;
+let penaltyStartingKicker = 0;
+let penaltyGame = createPenaltyGame();
+
+function createPenaltyGame() {
+  return { phase: 'waiting', kicker: penaltyStartingKicker, kicks: [[], []], choices: {}, result: null, winner: null, message: 'Waiting for two players' };
+}
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -29,7 +46,19 @@ const contentTypes = {
 
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
-  const requested = pathname === '/' ? 'index.html' : pathname.slice(1);
+  if (pathname === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+  if (developmentMode && pathname === '/__dev_reload') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    res.write('retry: 500\n\n');
+    reloadClients.add(res);
+    req.on('close', () => reloadClients.delete(res));
+    return;
+  }
+  const requested = gamePaths.has(pathname) ? 'index.html' : pathname.slice(1);
   const file = path.resolve(publicDir, requested);
 
   if (!file.startsWith(`${publicDir}${path.sep}`)) {
@@ -42,10 +71,24 @@ const server = http.createServer((req, res) => {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': contentTypes[path.extname(file)] || 'application/octet-stream' });
+    if (developmentMode && requested === 'index.html') {
+      const reloadScript = `<script>(()=>{let opened=false;const source=new EventSource('/__dev_reload');source.onopen=()=>{opened=true};source.onmessage=()=>location.reload();source.onerror=()=>{if(opened)setTimeout(()=>location.reload(),500)};})();</script>`;
+      data = Buffer.from(data.toString().replace('</body>', `${reloadScript}</body>`));
+    }
+    res.writeHead(200, {
+      'Content-Type': contentTypes[path.extname(file)] || 'application/octet-stream',
+      'Cache-Control': 'no-cache'
+    });
     res.end(data);
   });
 });
+
+if (developmentMode) {
+  fs.watch(publicDir, (event, filename) => {
+    if (filename !== 'react-app.js') return;
+    for (const response of reloadClients) response.write('data: reload\n\n');
+  });
+}
 
 const wss = new WebSocketServer({ server });
 
@@ -56,16 +99,72 @@ function broadcast(message, except) {
   }
 }
 
-function publicUsers() {
-  return [...users.values()].map(({ id, name, color, tool, drawing }) => ({ id, name, color, tool, drawing }));
+const gamePaths = new Set(['/', '/tank.html', '/penalty.html']);
+let currentGamePath = '/';
+function cleanName(value) {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
 }
+function resetTankState() {
+  bullets.length = 0;
+  for (const player of tankPlayers.values()) {
+    Object.assign(player, randomSpawn(), { score: 0, alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2, input: { forward: 0, turn: 0, aimX: 0 } });
+    player.turret = player.heading;
+  }
+  tankBroadcast(tankSnapshot());
+}
+function resetPenaltyState(swapRoles = false) {
+  if (swapRoles) penaltyStartingKicker = 1 - penaltyStartingKicker;
+  penaltyGame = createPenaltyGame();
+  if (penaltyPlayers.length === 2) {
+    penaltyGame.phase = 'choosing';
+    penaltyGame.message = 'Both players choose a zone';
+  }
+  penaltyBroadcast();
+}
+function resetArcadeState() {
+  history.length = 0;
+  resetTankState();
+  resetPenaltyState();
+  broadcast({ type: 'clear', by: 'Game switch' });
+}
+function attachPlatformMessages(socket) {
+  socket.on('message', raw => {
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (message.type === 'switchGame' && gamePaths.has(message.path)) {
+      currentGamePath = message.path;
+      resetArcadeState();
+      broadcast({ type: 'switchGame', path: message.path });
+    }
+  });
+}
+
+function publicUsers() {
+  return [...users.values()].map(publicUser);
+}
+
+function publicUser({ id, name, color, tool, drawing }) { return { id, name, color, tool, drawing }; }
 
 function tankSnapshot() {
   return {
     type: 'tankState',
-    players: [...tankPlayers.values()].map(({ socket, input, lastFire, ...player }) => player),
+    players: [...tankPlayers.values()].map(({ socket, input, lastFire, key, removeTimer, ...player }) => player),
     bullets: bullets.map(({ ownerId, ...bullet }) => bullet)
   };
+}
+
+function clientKey(request) {
+  const value = new URL(request.url, 'http://localhost').searchParams.get('client');
+  return value && /^[a-zA-Z0-9_-]{8,80}$/.test(value) ? value : crypto.randomUUID();
+}
+
+function uniqueClientKey(records, key) {
+  return records.get(key)?.socket?.readyState === WebSocket.OPEN ? crypto.randomUUID() : key;
+}
+
+function scheduleRemoval(record, remove) {
+  clearTimeout(record.removeTimer);
+  record.removeTimer = setTimeout(() => remove(record), 10000);
 }
 
 function randomSpawn() {
@@ -76,56 +175,253 @@ function randomSpawn() {
   return { x: 34, z: 34 };
 }
 
-function tankBroadcast(message) {
-  const payload = JSON.stringify(message);
-  for (const player of tankPlayers.values()) if (player.socket.readyState === WebSocket.OPEN) player.socket.send(payload);
+function segmentHitsBox(x1, z1, x2, z2, box, padding = 0) {
+  const minX = box.x - box.w / 2 - padding, maxX = box.x + box.w / 2 + padding;
+  const minZ = box.z - box.d / 2 - padding, maxZ = box.z + box.d / 2 + padding;
+  const dx = x2 - x1, dz = z2 - z1;
+  let enter = 0, exit = 1;
+  for (const [start, delta, min, max] of [[x1, dx, minX, maxX], [z1, dz, minZ, maxZ]]) {
+    if (Math.abs(delta) < 1e-9) { if (start < min || start > max) return false; continue; }
+    const a = (min - start) / delta, b = (max - start) / delta;
+    enter = Math.max(enter, Math.min(a, b));
+    exit = Math.min(exit, Math.max(a, b));
+    if (enter > exit) return false;
+  }
+  return true;
 }
 
-function addTank(socket) {
+function segmentDistance(x1, z1, x2, z2, x, z) {
+  const dx = x2 - x1, dz = z2 - z1, lengthSquared = dx * dx + dz * dz;
+  const amount = lengthSquared ? Math.max(0, Math.min(1, ((x - x1) * dx + (z - z1) * dz) / lengthSquared)) : 0;
+  return Math.hypot(x - (x1 + dx * amount), z - (z1 + dz * amount));
+}
+
+function tankBroadcast(message) {
+  const payload = JSON.stringify(message);
+  for (const player of tankPlayers.values()) if (player.socket?.readyState === WebSocket.OPEN) player.socket.send(payload);
+}
+
+function addTank(socket, requestedKey) {
+  const key = uniqueClientKey(tankPlayers, requestedKey);
+  const returning = tankPlayers.get(key);
+  if (returning) {
+    clearTimeout(returning.removeTimer);
+    returning.socket = socket;
+    returning.input = { forward: 0, turn: 0, aimX: 0 };
+    socket.isAlive = true;
+    socket.send(JSON.stringify({ type: 'tankWelcome', selfId: returning.id, clientId: key }));
+    socket.on('pong', () => { socket.isAlive = true; });
+    attachTankMessages(socket, returning, key);
+    return;
+  }
   const number = nextTankNumber++;
   const spawn = randomSpawn();
-  const player = { socket, id: `tank-${number}`, name: `TANK ${String(number).padStart(2, '0')}`, color: tankColors[(number - 1) % tankColors.length], score: 0, alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2, turret: 0, ...spawn, input: { forward: 0, turn: 0, aimX: 0 }, lastFire: 0 };
+  const player = { socket, key, id: `tank-${number}`, name: `TANK ${String(number).padStart(2, '0')}`, color: tankColors[(number - 1) % tankColors.length], score: 0, alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2, turret: 0, ...spawn, input: { forward: 0, turn: 0, aimX: 0 }, lastFire: 0 };
   player.turret = player.heading;
-  tankPlayers.set(socket, player);
+  tankPlayers.set(key, player);
   socket.isAlive = true;
-  socket.send(JSON.stringify({ type: 'tankWelcome', selfId: player.id }));
+  socket.send(JSON.stringify({ type: 'tankWelcome', selfId: player.id, clientId: key }));
 
   socket.on('pong', () => { socket.isAlive = true; });
+  attachTankMessages(socket, player, key);
+}
+
+function attachTankMessages(socket, player, key) {
   socket.on('message', raw => {
+    if (player.socket !== socket) return;
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
-    if (message.type === 'tankInput') {
+    if (message.type === 'tankReset') {
+      resetTankState();
+    } else if (message.type === 'setName') {
+      const name = cleanName(message.name);
+      if (name) { player.name = name; tankBroadcast(tankSnapshot()); }
+    } else if (message.type === 'tankInput') {
       player.input.forward = Math.max(-1, Math.min(1, Number(message.forward) || 0));
       player.input.turn = Math.max(-1, Math.min(1, Number(message.turn) || 0));
-      player.input.aimX = Math.max(-1, Math.min(1, Number(message.aimX) || 0));
     } else if (message.type === 'tankFire' && player.alive && Date.now() - player.lastFire > 650) {
       player.lastFire = Date.now();
-      bullets.push({ id: `${player.id}-${player.lastFire}`, ownerId: player.id, x: player.x + Math.sin(player.turret) * 2, z: player.z + Math.cos(player.turret) * 2, vx: Math.sin(player.turret) * 22, vz: Math.cos(player.turret) * 22, life: 2.5 });
+      const muzzle = { x: player.x + Math.sin(player.turret) * 0.9, z: player.z + Math.cos(player.turret) * 0.9 };
+      const blocked = tankObstacles.some(box => segmentHitsBox(player.x, player.z, muzzle.x, muzzle.z, box));
+      if (!blocked) bullets.push({ id: `${player.id}-${player.lastFire}`, ownerId: player.id, ...muzzle, vx: Math.sin(player.turret) * 22, vz: Math.cos(player.turret) * 22, life: 2.5 });
     }
   });
-  socket.on('close', () => tankPlayers.delete(socket));
+  socket.on('close', () => {
+    if (player.socket !== socket) return;
+    player.socket = null;
+    player.input = { forward: 0, turn: 0, aimX: 0 };
+    scheduleRemoval(player, record => tankPlayers.delete(key));
+  });
+}
+
+function publicPenaltyState(viewer) {
+  const players = penaltyPlayers.map(key => penaltyClients.get(key)).filter(Boolean);
+  return {
+    type: 'penaltyState',
+    selfId: viewer.id,
+    role: viewer.role,
+    players: players.map((player, index) => ({ id: player.id, name: player.name, color: player.color, connected: Boolean(player.socket), index })),
+    spectators: [...penaltyClients.values()].filter(client => client.role === 'spectator').length,
+    game: { ...penaltyGame, choices: { 0: Boolean(penaltyGame.choices[0]), 1: Boolean(penaltyGame.choices[1]) } }
+  };
+}
+
+function penaltyBroadcast() {
+  for (const client of penaltyClients.values()) {
+    if (client.socket?.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(publicPenaltyState(client)));
+  }
+}
+
+function penaltyScore(index) { return penaltyGame.kicks[index].filter(Boolean).length; }
+
+function finishPenaltyIfDecided() {
+  const taken = penaltyGame.kicks.map(kicks => kicks.length);
+  const scores = [penaltyScore(0), penaltyScore(1)];
+  if (taken[0] <= 5 && taken[1] <= 5) {
+    if (scores[0] > scores[1] + 5 - taken[1]) penaltyGame.winner = 0;
+    if (scores[1] > scores[0] + 5 - taken[0]) penaltyGame.winner = 1;
+  }
+  if (!penaltyGame.winner && penaltyGame.winner !== 0 && taken[0] >= 5 && taken[0] === taken[1] && scores[0] !== scores[1]) {
+    penaltyGame.winner = scores[0] > scores[1] ? 0 : 1;
+  }
+  if (penaltyGame.winner === 0 || penaltyGame.winner === 1) {
+    penaltyGame.phase = 'finished';
+    penaltyGame.message = `${penaltyClients.get(penaltyPlayers[penaltyGame.winner])?.name || 'Team'} wins`;
+    return true;
+  }
+  return false;
+}
+
+function resolvePenalty() {
+  const kicker = penaltyGame.kicker;
+  const keeper = 1 - kicker;
+  const target = penaltyGame.choices[kicker];
+  const dive = penaltyGame.choices[keeper];
+  const goal = target !== dive;
+  penaltyGame.kicks[kicker].push(goal);
+  penaltyGame.result = { kicker, keeper, target, dive, goal };
+  penaltyGame.phase = 'result';
+  penaltyGame.message = goal ? 'GOAL!' : 'SAVED!';
+  penaltyBroadcast();
+  setTimeout(() => {
+    if (penaltyGame.phase !== 'result') return;
+    if (finishPenaltyIfDecided()) { penaltyBroadcast(); return; }
+    penaltyGame.kicker = keeper;
+    penaltyGame.choices = {};
+    penaltyGame.result = null;
+    penaltyGame.phase = 'choosing';
+    penaltyGame.message = 'Both players choose a zone';
+    penaltyBroadcast();
+  }, 1800);
+}
+
+function addPenalty(socket, requestedKey) {
+  const key = uniqueClientKey(penaltyClients, requestedKey);
+  let client = penaltyClients.get(key);
+  if (client) {
+    clearTimeout(client.removeTimer);
+    client.socket = socket;
+  } else {
+    const number = nextPenaltyNumber++;
+    const role = penaltyPlayers.length < 2 && penaltyGame.phase === 'waiting' ? 'player' : 'spectator';
+    client = { key, socket, id: `penalty-${number}`, name: `User ${number}`, role, color: role === 'player' ? penaltyColors[penaltyPlayers.length] : '#8c918b' };
+    penaltyClients.set(key, client);
+    if (role === 'player') penaltyPlayers.push(key);
+  }
+  socket.isAlive = true;
+  socket.on('pong', () => { socket.isAlive = true; });
+  socket.on('message', raw => {
+    if (client.socket !== socket) return;
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    const index = penaltyPlayers.indexOf(key);
+    if (message.type === 'setName') {
+      const name = cleanName(message.name);
+      if (name) { client.name = name; penaltyBroadcast(); }
+      return;
+    }
+    if (message.type === 'penaltyReset' && client.role === 'player') {
+      resetPenaltyState(true);
+      return;
+    }
+    if (client.role !== 'player' || penaltyGame.phase !== 'choosing') return;
+    if (message.type !== 'penaltyChoose' || index < 0 || !penaltyZones.has(message.zone) || penaltyGame.choices[index]) return;
+    penaltyGame.choices[index] = message.zone;
+    penaltyBroadcast();
+    if (penaltyGame.choices[0] && penaltyGame.choices[1]) resolvePenalty();
+  });
+  socket.on('close', () => {
+    if (client.socket !== socket) return;
+    client.socket = null;
+    penaltyBroadcast();
+    scheduleRemoval(client, record => {
+      penaltyClients.delete(record.key);
+      const playerIndex = penaltyPlayers.indexOf(record.key);
+      if (playerIndex >= 0) {
+        if (penaltyGame.phase === 'waiting') penaltyPlayers.splice(playerIndex, 1);
+        else if (penaltyGame.phase !== 'finished') {
+          penaltyGame.winner = 1 - playerIndex;
+          penaltyGame.phase = 'finished';
+          penaltyGame.message = `${penaltyClients.get(penaltyPlayers[1 - playerIndex])?.name || 'Opponent'} wins by disconnect`;
+        }
+      }
+      penaltyBroadcast();
+    });
+  });
+  if (penaltyPlayers.length === 2 && penaltyGame.phase === 'waiting') {
+    penaltyGame.phase = 'choosing';
+    penaltyGame.message = 'Both players choose a zone';
+  }
+  socket.send(JSON.stringify({ type: 'penaltyWelcome', clientId: key }));
+  penaltyBroadcast();
 }
 
 wss.on('connection', (socket, request) => {
-  if (new URL(request.url, 'http://localhost').searchParams.get('room') === 'tanks') {
-    addTank(socket);
+  attachPlatformMessages(socket);
+  socket.send(JSON.stringify({ type: 'switchGame', path: currentGamePath }));
+  const url = new URL(request.url, 'http://localhost');
+  const room = url.searchParams.get('room');
+  let key = clientKey(request);
+  if (room === 'tanks') {
+    addTank(socket, key);
+    return;
+  }
+  if (room === 'penalty') {
+    addPenalty(socket, key);
+    return;
+  }
+  key = uniqueClientKey(users, key);
+  const returning = users.get(key);
+  if (returning) {
+    clearTimeout(returning.removeTimer);
+    returning.socket = socket;
+    socket.isAlive = true;
+    socket.send(JSON.stringify({ type: 'welcome', self: publicUser(returning), users: publicUsers(), history, chatHistory, clientId: key }));
+    broadcast({ type: 'presence', users: publicUsers() }, socket);
+    attachDoodleMessages(socket, returning, key);
     return;
   }
   const number = nextUserNumber++;
   const user = {
+    socket,
+    key,
     id: `user-${number}`,
     name: `User ${number}`,
     color: colors[(number - 1) % colors.length],
     tool: 'pen',
     drawing: false
   };
-  users.set(socket, user);
+  users.set(key, user);
   socket.isAlive = true;
-  socket.send(JSON.stringify({ type: 'welcome', self: user, users: publicUsers(), history }));
+  socket.send(JSON.stringify({ type: 'welcome', self: publicUser(user), users: publicUsers(), history, chatHistory, clientId: key }));
   broadcast({ type: 'presence', users: publicUsers() }, socket);
+  attachDoodleMessages(socket, user, key);
+});
 
+function attachDoodleMessages(socket, user, key) {
   socket.on('pong', () => { socket.isAlive = true; });
   socket.on('message', (raw) => {
+    if (user.socket !== socket) return;
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
 
@@ -139,6 +435,9 @@ wss.on('connection', (socket, request) => {
       history.push(stroke);
       if (history.length > 50000) history.splice(0, 10000);
       broadcast(stroke, socket);
+    } else if (message.type === 'setName') {
+      const name = cleanName(message.name);
+      if (name) { user.name = name; broadcast({ type: 'presence', users: publicUsers() }); }
     } else if (message.type === 'activity') {
       user.drawing = Boolean(message.drawing);
       user.tool = message.tool === 'eraser' ? 'eraser' : 'pen';
@@ -149,14 +448,28 @@ wss.on('connection', (socket, request) => {
     } else if (message.type === 'clear') {
       history.length = 0;
       broadcast({ type: 'clear', by: user.name });
+    } else if (message.type === 'chat') {
+      const text = typeof message.text === 'string' ? message.text.trim().slice(0, 240) : '';
+      const now = Date.now();
+      if (!text || now - (user.lastChat || 0) < 500) return;
+      user.lastChat = now;
+      const chat = { type: 'chat', id: `${user.id}-${now}`, userId: user.id, name: user.name, color: user.color, text, sentAt: now };
+      chatHistory.push(chat);
+      if (chatHistory.length > 100) chatHistory.shift();
+      broadcast(chat);
     }
   });
 
   socket.on('close', () => {
-    users.delete(socket);
-    broadcast({ type: 'left', userId: user.id, users: publicUsers() });
+    if (user.socket !== socket) return;
+    user.socket = null;
+    user.drawing = false;
+    scheduleRemoval(user, record => {
+      users.delete(key);
+      broadcast({ type: 'left', userId: record.id, users: publicUsers() });
+    });
   });
-});
+}
 
 let previousTick = Date.now();
 const gameLoop = setInterval(() => {
@@ -165,20 +478,25 @@ const gameLoop = setInterval(() => {
   previousTick = now;
   for (const player of tankPlayers.values()) {
     if (!player.alive) {
-      if (now >= player.respawnAt) Object.assign(player, randomSpawn(), { alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2 });
+      if (now >= player.respawnAt) {
+        const heading = Math.random() * Math.PI * 2;
+        Object.assign(player, randomSpawn(), { alive: true, respawnAt: 0, heading, turret: heading });
+      }
       continue;
     }
-    player.heading += player.input.turn * dt * 2.1;
-    player.turret = player.heading + player.input.aimX * 1.3;
+    const hullTurn = player.input.turn * dt * 2.1;
+    player.heading += hullTurn;
+    player.turret = player.heading;
     const next = { x: player.x + Math.sin(player.heading) * player.input.forward * dt * 9, z: player.z + Math.cos(player.heading) * player.input.forward * dt * 9 };
-    const blocked = Math.abs(next.x) > 38 || Math.abs(next.z) > 38 || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + 1.25 && Math.abs(next.z - box.z) < box.d / 2 + 1.25);
+    const blocked = Math.abs(next.x) > 40 - tankRadius || Math.abs(next.z) > 40 - tankRadius || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + tankRadius && Math.abs(next.z - box.z) < box.d / 2 + tankRadius);
     if (!blocked) Object.assign(player, next);
   }
   for (let index = bullets.length - 1; index >= 0; index--) {
     const bullet = bullets[index];
+    const previousX = bullet.x, previousZ = bullet.z;
     bullet.x += bullet.vx * dt; bullet.z += bullet.vz * dt; bullet.life -= dt;
-    const hitsWall = Math.abs(bullet.x) > 40 || Math.abs(bullet.z) > 40 || tankObstacles.some(box => Math.abs(bullet.x - box.x) < box.w / 2 && Math.abs(bullet.z - box.z) < box.d / 2);
-    const victim = [...tankPlayers.values()].find(player => player.alive && player.id !== bullet.ownerId && Math.hypot(player.x - bullet.x, player.z - bullet.z) < 1.4);
+    const hitsWall = Math.abs(bullet.x) > 40 || Math.abs(bullet.z) > 40 || tankObstacles.some(box => segmentHitsBox(previousX, previousZ, bullet.x, bullet.z, box));
+    const victim = hitsWall ? null : [...tankPlayers.values()].find(player => player.alive && player.id !== bullet.ownerId && segmentDistance(previousX, previousZ, bullet.x, bullet.z, player.x, player.z) < tankRadius);
     if (victim) {
       victim.alive = false; victim.respawnAt = now + 3000;
       const killer = [...tankPlayers.values()].find(player => player.id === bullet.ownerId);
@@ -205,4 +523,4 @@ if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Doodle Together is live on http://localhost:${PORT}`));
 }
 
-module.exports = { server, wss };
+module.exports = { server, wss, segmentHitsBox, segmentDistance };

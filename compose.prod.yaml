@@ -1,0 +1,15 @@
+services:
+  arcade:
+    build:
+      target: production
+    image: arcade:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - caddy
+
+networks:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:-caddy}
