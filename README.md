@@ -36,3 +36,9 @@ location / {
 ```
 
 Because state is in memory, run one Node.js instance for now. Multiple instances would need a shared pub/sub and state layer (such as Redis), which is a natural next step before scaling games horizontally.
+
+## Arcade games
+
+- **Line Fighter II** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
+- **Iron Grid** is available at `/tank.html`.
+- Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.
