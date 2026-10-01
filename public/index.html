@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f1e7">
+  <title>Doodle Together</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Doodle Together home">
+      <span class="brand-mark">〰</span>
+      <span>Doodle<br><strong>Together</strong></span>
+    </a>
+    <div class="connection"><span id="connectionDot"></span><span id="connectionText">Connecting…</span></div>
+    <button id="clearButton" class="clear-button" type="button" title="Clear the board for everyone">Clear board</button>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">A shared corner of the internet</p>
+        <h1>Make a mark.<br><em>Together.</em></h1>
+      </div>
+      <p class="lede">Draw, dream, and doodle with everyone here — every line appears in real time.</p>
+    </section>
+
+    <section class="workspace">
+      <aside class="tools" aria-label="Drawing tools">
+        <button class="tool active" data-tool="pen" type="button" aria-label="Pen tool"><span>✎</span><small>Pen</small></button>
+        <button class="tool" data-tool="eraser" type="button" aria-label="Eraser tool"><span>◇</span><small>Eraser</small></button>
+        <label class="size-control"><small>Size</small><input id="size" type="range" min="1" max="24" value="4" aria-label="Brush size"></label>
+      </aside>
+
+      <div class="board-wrap">
+        <canvas id="board" aria-label="Shared drawing board"></canvas>
+        <div id="cursors" class="cursors" aria-hidden="true"></div>
+        <div class="paper-note">Draw anywhere ✦</div>
+      </div>
+
+      <aside class="people-panel">
+        <div class="people-heading"><span>In the room</span><span id="peopleCount" class="count">0</span></div>
+        <div id="people" class="people"></div>
+        <p class="invite-note">Share this page's URL to invite someone.</p>
+      </aside>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
