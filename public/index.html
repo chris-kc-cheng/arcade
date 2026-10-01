@@ -3,38 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#f6f1e7">
-  <title>Board</title>
+  <meta name="theme-color" content="#0b1310">
+  <title>Snake Party — Retro Arcade</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="app-link" href="/tank.html" aria-label="Open tank game" title="Open tank game">▰</a>
-    <div class="connection"><span id="connectionDot"></span><span id="connectionText">Connecting…</span></div>
-    <button id="clearButton" class="clear-button" type="button" title="Clear the board for everyone">Clear board</button>
-  </header>
+  <div class="noise" aria-hidden="true"></div>
+  <main class="game-shell">
+    <header class="masthead">
+      <div class="brand-lockup">
+        <span class="eyebrow">PIXEL ARCADE / 1998</span>
+        <h1>SNAKE <span>PARTY</span></h1>
+      </div>
+      <div class="status-pill"><i></i> SYSTEM READY</div>
+    </header>
 
-  <main>
-    <section class="workspace">
-      <aside class="tools" aria-label="Drawing tools">
-        <button class="tool active" data-tool="pen" type="button" aria-label="Pen tool"><span>✎</span><small>Pen</small></button>
-        <button class="tool" data-tool="eraser" type="button" aria-label="Eraser tool"><span>◇</span><small>Eraser</small></button>
-        <label class="size-control"><small>Size</small><input id="size" type="range" min="1" max="24" value="4" aria-label="Brush size"></label>
-      </aside>
-
-      <div class="board-wrap">
-        <canvas id="board" aria-label="Shared drawing board"></canvas>
-        <div id="cursors" class="cursors" aria-hidden="true"></div>
+    <section class="console" aria-label="Snake Party game console">
+      <div class="screen-bezel">
+        <div class="screen-header">
+          <div><small>SCORE</small><strong id="score">0000</strong></div>
+          <div class="screen-title">SNAKE PARTY</div>
+          <div class="high-score"><small>HI-SCORE</small><strong id="highScore">0000</strong></div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="game" width="720" height="500" aria-label="Snake game. Use arrow keys or WASD to steer."></canvas>
+          <div class="start-card" id="startCard">
+            <div class="pixel-snake" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="insert">★ READY PLAYER ONE ★</p>
+            <h2>CHASE THE<br><span>GLOW-BIT!</span></h2>
+            <p class="hint">DODGE THE CREW. GROW THE LONGEST.</p>
+            <button id="startButton" type="button">START GAME <b>▶</b></button>
+            <small>PRESS ENTER</small>
+          </div>
+          <div class="pause-card" id="pauseCard" hidden><b>PAUSED</b><span>PRESS P TO CONTINUE</span></div>
+        </div>
+        <div class="screen-footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> MOVE</span>
+          <span><kbd>P</kbd> PAUSE</span>
+          <span><kbd>R</kbd> RESTART</span>
+        </div>
       </div>
 
-      <aside class="people-panel">
-        <div class="people-heading"><span>In the room</span><span id="peopleCount" class="count">0</span></div>
-        <div id="people" class="people"></div>
+      <aside class="side-panel">
+        <div class="panel-heading"><span>LIVE ROSTER</span><b><i></i> 6 IN GAME</b></div>
+        <div id="roster" class="roster"></div>
+        <div class="mission">
+          <span class="mission-icon">✦</span>
+          <div><small>CURRENT MISSION</small><strong>FIRST TO 25</strong></div>
+          <b id="missionProgress">0/25</b>
+        </div>
+        <div class="rules">
+          <span>HOW TO PLAY</span>
+          <ol>
+            <li><b>01</b> GRAB THE GLOW-BIT</li>
+            <li><b>02</b> OUTRUN THE RIVALS</li>
+            <li><b>03</b> DON'T BITE A SNAKE</li>
+          </ol>
+        </div>
+        <button id="soundButton" class="sound-button" type="button" aria-pressed="true"><span>♪</span> SOUND: ON</button>
       </aside>
     </section>
-  </main>
 
-  <div id="toast" class="toast" role="status"></div>
+    <footer><span>© 1998 PIXEL ARCADE</span><span class="footer-message">EAT • GROW • SURVIVE</span><span>V.1.0.4</span></footer>
+  </main>
   <script src="/app.js"></script>
 </body>
 </html>
