@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#111712">
+  <title>Iron Grid</title>
+  <link rel="stylesheet" href="/tank.css">
+</head>
+<body>
+  <canvas id="game" aria-label="3D multiplayer tank arena"></canvas>
+  <header class="game-bar">
+    <a href="/" class="back" aria-label="Open drawing board" title="Drawing board">✎</a>
+    <div class="title"><span>IRON</span><strong>GRID</strong></div>
+    <div id="connection" class="connection"><i></i><span>CONNECTING</span></div>
+  </header>
+  <section class="scoreboard" aria-label="Scoreboard">
+    <div class="score-head"><span>PILOT</span><span>KILLS</span></div>
+    <div id="scores"></div>
+  </section>
+  <div class="reticle" aria-hidden="true"><i></i></div>
+  <div class="controls"><span><kbd>WASD</kbd> DRIVE</span><span><kbd>MOUSE</kbd> AIM</span><span><kbd>CLICK</kbd> FIRE</span></div>
+  <div id="respawn" class="respawn" role="status"><strong>DESTROYED</strong><span>REDEPLOYING IN <b>3</b></span></div>
+  <div id="message" class="message" role="status"></div>
+  <script src="/tank.js"></script>
+</body>
+</html>
