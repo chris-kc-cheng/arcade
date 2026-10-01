@@ -13,6 +13,31 @@ npm run dev
 
 Open <http://localhost:3000> in multiple browser windows to try the real-time modes. Development mode watches the React client and Node server and reloads connected tabs automatically. Use `npm start` for a production build and server.
 
+## How HTTPS and WebSockets work
+
+HTTPS and WebSockets serve different purposes in this application:
+
+- **HTTP/HTTPS** handles request-and-response traffic. The browser requests the HTML, CSS, JavaScript, and `/healthz`, and the server returns a response for each request.
+- **WebSocket** creates one persistent, two-way connection after the page loads. The browser and server can then send game state, drawing strokes, chat messages, presence changes, and synchronized app switches immediately without polling or reloading the page.
+- Local development uses `http://` plus `ws://`. Production uses encrypted `https://` plus `wss://`.
+
+The browser selects the WebSocket protocol from the page protocol:
+
+```js
+const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+const socket = new WebSocket(`${protocol}://${location.host}?room=tanks`);
+```
+
+In production, Caddy terminates HTTPS and forwards both ordinary HTTP requests and WebSocket upgrade requests to the Node container. Caddy handles the WebSocket upgrade automatically:
+
+```text
+Browser -- HTTPS/WSS --> Caddy -- HTTP/WS --> arcade:3000
+```
+
+`server.js` uses the native Node HTTP server for files and health checks and the `ws` package for WebSocket connections. The `room` query parameter routes a connection to the drawing board or a particular game. Authoritative multiplayer state stays in the Node process and is broadcast to connected clients. Each browser tab has its own session identity, so two tabs on the same computer are treated as two users. A disconnected player is retained for 10 seconds for reconnection; after that, returning creates a new player.
+
+Because game state is currently held in memory, restarting the Node container resets the active boards and games. Run only one Arcade server instance unless a shared state and pub/sub service such as Redis is added.
+
 ### Local Docker development
 
 The base Compose file is combined with the local override, which publishes port 3000, mounts the source tree, and runs the frontend/server watchers:

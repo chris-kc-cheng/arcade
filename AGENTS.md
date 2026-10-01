@@ -7,3 +7,4 @@
 - Keep browser clients dependency-free and responsive, and preserve keyboard accessibility and useful ARIA labels.
 - Validate all client messages at the server boundary and never trust client-owned scores, health, positions, or roles.
 - Add or update automated tests for shared protocol validation and run `npm test` before committing.
+- Whenever a new mini-game is added, generate an up-to-date screenshot of it, keep the screenshot in the repository, and add a visual showcase for the game to `README.md` in the same change.
