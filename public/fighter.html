@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ede5d3"><title>Line Fighter II</title>
+  <link rel="stylesheet" href="/fighter.css">
+</head>
+<body>
+  <header>
+    <nav aria-label="Arcade games"><a href="/" title="Drawing board">✎</a><a href="/tank.html" title="Iron Grid">▰</a></nav>
+    <div class="brand"><small>ARCADE PRESENTS</small><strong>LINE FIGHTER <i>II</i></strong></div>
+    <div id="connection"><b></b><span>CONNECTING</span></div>
+    <button id="reset" type="button">RESET MATCH</button>
+  </header>
+  <main>
+    <section class="hud" aria-label="Fighter energy">
+      <div class="fighter-label"><strong id="p1Name">RYU</strong><span>PLAYER 1</span></div>
+      <div class="energy"><i id="p1Energy"></i></div><div id="round" class="round">01</div>
+      <div class="energy right"><i id="p2Energy"></i></div><div class="fighter-label right"><strong id="p2Name">KEN</strong><span>CPU</span></div>
+    </section>
+    <canvas id="arena" aria-label="Multiplayer stick fighter arena"></canvas>
+    <div id="announcement" class="announcement" role="status"></div>
+    <div id="combo" class="combo" aria-live="polite"></div>
+    <aside id="spectator" class="spectator"><b>SPECTATING</b><span id="queue"></span></aside>
+    <div class="controls"><span><kbd>W A S D</kbd> MOVE</span><span><kbd>J</kbd> PUNCH</span><span><kbd>K</kbd> KICK</span></div>
+  </main>
+  <script src="/fighter.js"></script>
+</body>
+</html>
