@@ -1,6 +1,6 @@
 # Doodle Together
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, and two-player penalty shootout. The shootout follows a five-kicks-per-team format before sudden death; arrivals after the first two players spectate the live match. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake Party. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
@@ -69,3 +69,11 @@ The included multi-stage image builds the React application, removes development
 Caddy automatically proxies WebSocket upgrades. The Node port is exposed only to the shared Docker network and is not published on the VPS host.
 
 Because state is in memory, run one Node.js instance for now. Multiple instances would need a shared pub/sub and state layer (such as Redis), which is a natural next step before scaling games horizontally.
+
+## Arcade games
+
+- **Line Fighter II** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
+- **Tank** is available at `/tank.html` with a nine-sector 3D arena, tactical map, and BZFlag-style mouse-box controls.
+- **Penalty Shootout** is available at `/penalty.html` and follows a five-kicks-per-team format before sudden death.
+- **Snake Party** is available at `/snake.html` as a retro single-player challenge against bot snakes.
+- Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.

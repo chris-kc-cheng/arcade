@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput } = require('./lib/protocol');
 
 const PORT = Number(process.env.PORT) || 3000;
 const developmentMode = process.argv.includes('--dev');
@@ -20,11 +20,17 @@ let nextTankNumber = 1;
 const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
 // Keep the whole tank, including its short cannon, clear of solid geometry.
 const tankRadius = 0.9;
-const tankObstacles = [
+const TANK_MAP_HALF_SIZE = 120;
+const sectorObstacles = [
   { x: -20, z: -13, w: 15, d: 10 }, { x: 15, z: -18, w: 9, d: 18 },
   { x: -4, z: 3, w: 13, d: 13 }, { x: -25, z: 19, w: 10, d: 15 },
   { x: 23, z: 19, w: 14, d: 9 }, { x: 30, z: -4, w: 7, d: 8 }
 ];
+const tankObstacles = [-80, 0, 80].flatMap(offsetX =>
+  [-80, 0, 80].flatMap(offsetZ =>
+    sectorObstacles.map(box => ({ ...box, x: box.x + offsetX, z: box.z + offsetZ }))
+  )
+);
 const penaltyClients = new Map();
 const penaltyPlayers = [];
 const penaltyColors = ['#ed4f45', '#3b71e8'];
@@ -36,6 +42,12 @@ let penaltyGame = createPenaltyGame();
 function createPenaltyGame() {
   return { phase: 'waiting', kicker: penaltyStartingKicker, kicks: [[], []], choices: {}, result: null, winner: null, message: 'Waiting for two players' };
 }
+const fighters = new Map();
+let fighterOrder = [];
+let nextFighterNumber = 1;
+let fighterRound = 1;
+let fighterRoundEndsAt = 0;
+let fighterNotice = '';
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -58,7 +70,7 @@ const server = http.createServer((req, res) => {
     req.on('close', () => reloadClients.delete(res));
     return;
   }
-  const requested = gamePaths.has(pathname) ? 'index.html' : pathname.slice(1);
+  const requested = spaPaths.has(pathname) ? 'index.html' : pathname.slice(1);
   const file = path.resolve(publicDir, requested);
 
   if (!file.startsWith(`${publicDir}${path.sep}`)) {
@@ -99,7 +111,8 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank.html', '/penalty.html']);
+const gamePaths = new Set(['/', '/tank.html', '/penalty.html', '/fighter.html', '/snake.html']);
+const spaPaths = new Set(['/', '/tank.html', '/penalty.html']);
 let currentGamePath = '/';
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
@@ -125,6 +138,9 @@ function resetArcadeState() {
   history.length = 0;
   resetTankState();
   resetPenaltyState();
+  fighterRound++;
+  resetFighterRound('ARCADE RESET');
+  if (fighters.size) fighterBroadcast();
   broadcast({ type: 'clear', by: 'Game switch' });
 }
 function attachPlatformMessages(socket) {
@@ -169,10 +185,10 @@ function scheduleRemoval(record, remove) {
 
 function randomSpawn() {
   for (let attempt = 0; attempt < 50; attempt++) {
-    const point = { x: Math.random() * 68 - 34, z: Math.random() * 68 - 34 };
+    const point = { x: Math.random() * 228 - 114, z: Math.random() * 228 - 114 };
     if (!tankObstacles.some(box => Math.abs(point.x - box.x) < box.w / 2 + 3 && Math.abs(point.z - box.z) < box.d / 2 + 3)) return point;
   }
-  return { x: 34, z: 34 };
+  return { x: 114, z: 114 };
 }
 
 function segmentHitsBox(x1, z1, x2, z2, box, padding = 0) {
@@ -376,7 +392,68 @@ function addPenalty(socket, requestedKey) {
   penaltyBroadcast();
 }
 
+function fighterPublic(player) {
+  const { socket, input, attackHeld, ...visible } = player;
+  return visible;
+}
+
+function fighterRoles() {
+  const active = fighterOrder.slice(0, 2);
+  for (const [id, player] of fighters) {
+    const position = active.indexOf(id);
+    player.role = position < 0 ? 'spectator' : `player${position + 1}`;
+  }
+}
+
+function resetFighterRound(notice = '') {
+  fighterRoles();
+  fighterRoundEndsAt = 0;
+  fighterNotice = notice;
+  const active = fighterOrder.slice(0, 2);
+  active.forEach((id, index) => {
+    const player = fighters.get(id);
+    if (player) Object.assign(player, { x: index ? 72 : 28, y: 0, vx: 0, vy: 0, energy: 100, facing: index ? -1 : 1, attack: '', attackUntil: 0, hitUntil: 0, combo: '', cpuEnergy: 100, cpuAttack: '', cpuAttackUntil: 0, cpuHitUntil: 0, cpuCombo: '' });
+  });
+}
+
+function fighterSnapshot(now = Date.now()) {
+  const active = fighterOrder.slice(0, 2).map(id => fighters.get(id)).filter(Boolean);
+  const players = active.map(fighterPublic);
+  if (players.length === 1) players.push({ id: 'cpu', name: 'CPU KEN', role: 'computer', color: '#d9483b', x: 72, y: 0, energy: active[0].cpuEnergy ?? 100, facing: -1, attack: active[0].cpuAttack || '', attackUntil: active[0].cpuAttackUntil || 0, hitUntil: active[0].cpuHitUntil || 0, combo: active[0].cpuCombo || '' });
+  return { type: 'fighterState', selfCount: fighters.size, round: fighterRound, players, queue: fighterOrder.slice(2).map((id, i) => ({ ...fighterPublic(fighters.get(id)), queuePosition: i + 1 })), roundEndsAt: fighterRoundEndsAt, notice: fighterNotice, serverTime: now };
+}
+
+function fighterBroadcast(message = fighterSnapshot()) {
+  const payload = JSON.stringify(message);
+  for (const player of fighters.values()) if (player.socket.readyState === WebSocket.OPEN) player.socket.send(payload);
+}
+
+function addFighter(socket) {
+  const number = nextFighterNumber++;
+  const id = `fighter-${number}`;
+  const player = { socket, id, name: `FIGHTER ${String(number).padStart(2, '0')}`, color: number % 2 ? '#f4f0e6' : '#d9483b', role: 'spectator', x: 28, y: 0, vx: 0, vy: 0, facing: 1, energy: 100, attack: '', attackUntil: 0, hitUntil: 0, combo: '', input: cleanFighterInput({}), attackHeld: false, cpuEnergy: 100 };
+  fighters.set(id, player); fighterOrder.push(id);
+  if (fighterOrder.length <= 2) resetFighterRound(fighterOrder.length === 2 ? 'A NEW CHALLENGER!' : 'CPU CHALLENGER'); else fighterRoles();
+  socket.isAlive = true;
+  socket.send(JSON.stringify({ type: 'fighterWelcome', selfId: id }));
+  fighterBroadcast();
+  socket.on('pong', () => { socket.isAlive = true; });
+  socket.on('message', raw => {
+    let message; try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (message.type === 'fighterInput') player.input = cleanFighterInput(message);
+    if (message.type === 'fighterReset' && player.role !== 'spectator') { fighterRound++; resetFighterRound(`${player.name} RESET THE ROUND`); fighterBroadcast(); }
+  });
+  socket.on('close', () => {
+    const wasActive = fighterOrder.indexOf(id) < 2;
+    fighters.delete(id); fighterOrder = fighterOrder.filter(item => item !== id);
+    if (wasActive) { fighterRound++; resetFighterRound('MATCH LINEUP UPDATED'); }
+    else fighterRoles();
+    fighterBroadcast();
+  });
+}
+
 wss.on('connection', (socket, request) => {
+  socket.isAlive = true;
   attachPlatformMessages(socket);
   socket.send(JSON.stringify({ type: 'switchGame', path: currentGamePath }));
   const url = new URL(request.url, 'http://localhost');
@@ -390,6 +467,8 @@ wss.on('connection', (socket, request) => {
     addPenalty(socket, key);
     return;
   }
+  if (room === 'fighter') { addFighter(socket); return; }
+  if (room === 'snake') { socket.on('pong', () => { socket.isAlive = true; }); return; }
   key = uniqueClientKey(users, key);
   const returning = users.get(key);
   if (returning) {
@@ -471,6 +550,65 @@ function attachDoodleMessages(socket, user, key) {
   });
 }
 
+function beginFighterAttack(attacker, type, now) {
+  const data = type === 'punch' ? { duration: 230, reach: 11, damage: 7 } : { duration: 360, reach: 15, damage: 11 };
+  attacker.attack = type; attacker.attackUntil = now + data.duration; attacker.attackHeld = true;
+  return data;
+}
+
+function runFighter(attacker, defender, dt, now, computer = false) {
+  if (!attacker || !defender || attacker.energy <= 0 || now < attacker.hitUntil) return;
+  let input = attacker.input;
+  if (computer) {
+    const distance = defender.x - attacker.x;
+    input = { left: distance < -9, right: distance > 9, down: false, jump: Math.random() < .008, punch: Math.abs(distance) < 12 && Math.random() < .07, kick: Math.abs(distance) < 16 && Math.random() < .035 };
+  }
+  attacker.facing = defender.x >= attacker.x ? 1 : -1;
+  const move = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  attacker.vx = move * (input.down ? 0 : 22);
+  if (input.jump && attacker.y === 0) attacker.vy = 38;
+  attacker.vy -= 90 * dt; attacker.y = Math.max(0, attacker.y + attacker.vy * dt); if (attacker.y === 0) attacker.vy = 0;
+  attacker.x = Math.max(5, Math.min(95, attacker.x + attacker.vx * dt));
+  const pressed = input.punch || input.kick;
+  if (!pressed) attacker.attackHeld = false;
+  if (pressed && !attacker.attackHeld && now >= attacker.attackUntil) {
+    const kind = input.punch ? 'punch' : 'kick';
+    const attack = beginFighterAttack(attacker, kind, now);
+    if (Math.abs(defender.x - attacker.x) <= attack.reach && Math.abs(defender.y - attacker.y) < 14 && now >= defender.hitUntil) {
+      defender.energy = Math.max(0, defender.energy - attack.damage); defender.hitUntil = now + 260; defender.x = Math.max(5, Math.min(95, defender.x + attacker.facing * 4));
+      attacker.combo = kind === 'punch' ? 'HADOUKEN' : (attacker.y > 5 ? 'SHORYUKEN' : 'TATSUMAKI SENPUU KYAKU');
+      attacker.comboUntil = now + 900;
+    }
+  }
+  if (now > (attacker.comboUntil || 0)) attacker.combo = '';
+}
+
+let previousFighterTick = Date.now();
+const fighterLoop = setInterval(() => {
+  if (!fighters.size) return;
+  const now = Date.now(), dt = Math.min((now - previousFighterTick) / 1000, .05); previousFighterTick = now;
+  const active = fighterOrder.slice(0, 2).map(id => fighters.get(id)).filter(Boolean);
+  if (!fighterRoundEndsAt && active.length) {
+    if (active.length === 1) {
+      const human = active[0];
+      const cpu = { x: 72, y: 0, vx: 0, vy: 0, facing: -1, energy: human.cpuEnergy ?? 100, attack: human.cpuAttack || '', attackUntil: human.cpuAttackUntil || 0, hitUntil: human.cpuHitUntil || 0, combo: human.cpuCombo || '', comboUntil: human.cpuComboUntil || 0, attackHeld: human.cpuAttackHeld || false };
+      runFighter(human, cpu, dt, now); runFighter(cpu, human, dt, now, true);
+      Object.assign(human, { cpuEnergy: cpu.energy, cpuAttack: cpu.attack, cpuAttackUntil: cpu.attackUntil, cpuHitUntil: cpu.hitUntil, cpuCombo: cpu.combo, cpuComboUntil: cpu.comboUntil, cpuAttackHeld: cpu.attackHeld });
+      if (human.energy <= 0 || cpu.energy <= 0) { fighterNotice = human.energy > 0 ? `${human.name} WINS` : 'CPU KEN WINS'; fighterRoundEndsAt = now + 3000; }
+    } else {
+      runFighter(active[0], active[1], dt, now); runFighter(active[1], active[0], dt, now);
+      const winner = active.find(player => player.energy > 0);
+      if (active.some(player => player.energy <= 0)) { fighterNotice = `${winner?.name || 'DRAW'} WINS`; fighterRoundEndsAt = now + 3000; }
+    }
+  } else if (fighterRoundEndsAt && now >= fighterRoundEndsAt) {
+    fighterRound++;
+    if (fighterOrder.length > 2) fighterOrder.push(...fighterOrder.splice(0, 2));
+    resetFighterRound('FIGHT!');
+  }
+  fighterBroadcast(fighterSnapshot(now));
+}, 50);
+fighterLoop.unref();
+
 let previousTick = Date.now();
 const gameLoop = setInterval(() => {
   const now = Date.now();
@@ -488,14 +626,14 @@ const gameLoop = setInterval(() => {
     player.heading += hullTurn;
     player.turret = player.heading;
     const next = { x: player.x + Math.sin(player.heading) * player.input.forward * dt * 9, z: player.z + Math.cos(player.heading) * player.input.forward * dt * 9 };
-    const blocked = Math.abs(next.x) > 40 - tankRadius || Math.abs(next.z) > 40 - tankRadius || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + tankRadius && Math.abs(next.z - box.z) < box.d / 2 + tankRadius);
+    const blocked = Math.abs(next.x) > TANK_MAP_HALF_SIZE - tankRadius || Math.abs(next.z) > TANK_MAP_HALF_SIZE - tankRadius || tankObstacles.some(box => Math.abs(next.x - box.x) < box.w / 2 + tankRadius && Math.abs(next.z - box.z) < box.d / 2 + tankRadius);
     if (!blocked) Object.assign(player, next);
   }
   for (let index = bullets.length - 1; index >= 0; index--) {
     const bullet = bullets[index];
     const previousX = bullet.x, previousZ = bullet.z;
     bullet.x += bullet.vx * dt; bullet.z += bullet.vz * dt; bullet.life -= dt;
-    const hitsWall = Math.abs(bullet.x) > 40 || Math.abs(bullet.z) > 40 || tankObstacles.some(box => segmentHitsBox(previousX, previousZ, bullet.x, bullet.z, box));
+    const hitsWall = Math.abs(bullet.x) > TANK_MAP_HALF_SIZE || Math.abs(bullet.z) > TANK_MAP_HALF_SIZE || tankObstacles.some(box => segmentHitsBox(previousX, previousZ, bullet.x, bullet.z, box));
     const victim = hitsWall ? null : [...tankPlayers.values()].find(player => player.alive && player.id !== bullet.ownerId && segmentDistance(previousX, previousZ, bullet.x, bullet.z, player.x, player.z) < tankRadius);
     if (victim) {
       victim.alive = false; victim.respawnAt = now + 3000;
@@ -517,7 +655,7 @@ const heartbeat = setInterval(() => {
 }, 30000);
 heartbeat.unref();
 
-wss.on('close', () => { clearInterval(heartbeat); clearInterval(gameLoop); });
+wss.on('close', () => { clearInterval(heartbeat); clearInterval(gameLoop); clearInterval(fighterLoop); });
 
 if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Doodle Together is live on http://localhost:${PORT}`));

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Snake Party</title><link rel="stylesheet" href="/snake.css">
+</head>
+<body>
+  <header class="snake-bar"><nav aria-label="Arcade games"><a href="/" title="Drawing board">✎</a><a href="/tank.html" title="Tank">▰</a><a href="/penalty.html" title="Penalty">⚽</a><a href="/fighter.html" title="Line Fighter">♙</a><a class="active" href="/snake.html" title="Snake">◆</a></nav><strong>SNAKE PARTY</strong><span>PIXEL ARCADE</span></header>
+  <main class="game-shell"><section class="console"><div class="screen-bezel"><div class="screen-header"><div><small>SCORE</small><strong id="score">0000</strong></div><div class="screen-title">SNAKE PARTY</div><div class="high-score"><small>HI-SCORE</small><strong id="highScore">0000</strong></div></div><div class="canvas-wrap"><canvas id="game" width="720" height="500" aria-label="Snake game"></canvas><div class="start-card" id="startCard"><p class="insert">★ READY PLAYER ONE ★</p><h2>CHASE THE<br><span>GLOW-BIT!</span></h2><p class="hint">DODGE THE CREW. GROW THE LONGEST.</p><button id="startButton">START GAME ▶</button></div><div class="pause-card" id="pauseCard" hidden><b>PAUSED</b><span>PRESS P TO CONTINUE</span></div></div><div class="screen-footer">ARROWS / WASD MOVE · P PAUSE · R RESTART</div></div><aside class="side-panel"><h3>LIVE ROSTER</h3><div id="roster" class="roster"></div><div class="mission"><span>CURRENT MISSION</span><strong>FIRST TO 25</strong><b id="missionProgress">0/25</b></div><button id="soundButton" type="button" aria-pressed="true">♪ SOUND: ON</button></aside></section></main>
+  <script src="/app.js"></script>
+</body>
+</html>
