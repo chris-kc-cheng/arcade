@@ -8,14 +8,27 @@ function sessionClient() {
 }
 
 const $ = selector => document.querySelector(selector);
-const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/?room=wordle&client=${encodeURIComponent(sessionClient())}`);
+const clientId = sessionClient();
+let socket;
 let state;
 let pending = false;
+let pendingTimer;
+let reconnectTimer;
 
 function send(message) {
   if (socket.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify(message));
   return true;
+}
+
+function setPending(value) {
+  pending = value;
+  clearTimeout(pendingTimer);
+  if (value) pendingTimer = setTimeout(() => {
+    pending = false;
+    if (state?.status === 'playing') $('#guessForm button').disabled = false;
+    $('#message').textContent = 'The server took too long to respond. You can try again.';
+  }, 3000);
 }
 
 function tile(letter = '', result = '') {
@@ -63,17 +76,7 @@ function render(previousGuessCount = 0) {
   if (!finished) $('#guess').focus();
 }
 
-socket.onopen = () => {
-  $('#connection').textContent = '● PRIVATE & LIVE';
-  const name = sessionStorage.getItem('arcade-name');
-  if (name) send({ type: 'setName', name });
-};
-socket.onclose = () => {
-  $('#connection').textContent = '● OFFLINE';
-  $('#guess').disabled = true;
-  $('#guessForm button').disabled = true;
-};
-socket.onmessage = event => {
+function handleMessage(event) {
   let message;
   try { message = JSON.parse(event.data); } catch { return; }
   if (message.type === 'platformPresence') {
@@ -87,10 +90,29 @@ socket.onmessage = event => {
   if (message.type === 'wordleState') {
     const previousGuessCount = state?.guesses.length || 0;
     state = message;
-    pending = false;
+    setPending(false);
     render(previousGuessCount);
   }
-};
+}
+
+function connect() {
+  clearTimeout(reconnectTimer);
+  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/?room=wordle&client=${encodeURIComponent(clientId)}`);
+  socket.onopen = () => {
+    $('#connection').textContent = '● PRIVATE & LIVE';
+    const name = sessionStorage.getItem('arcade-name');
+    if (name) send({ type: 'setName', name });
+  };
+  socket.onclose = () => {
+    setPending(false);
+    $('#connection').textContent = '● RECONNECTING';
+    $('#guess').disabled = true;
+    $('#guessForm button').disabled = true;
+    reconnectTimer = setTimeout(connect, 1000);
+  };
+  socket.onmessage = handleMessage;
+}
+connect();
 
 $('#guessForm').addEventListener('submit', event => {
   event.preventDefault();
@@ -100,18 +122,18 @@ $('#guessForm').addEventListener('submit', event => {
     $('#message').textContent = `Enter exactly ${state.length} letters`;
     return;
   }
-  pending = send({ type: 'guess', word });
+  setPending(send({ type: 'guess', word }));
   $('#guessForm button').disabled = pending;
 });
 $('#guess').addEventListener('input', event => {
   event.target.value = event.target.value.replace(/[^a-z]/gi, '').toUpperCase();
 });
 $('#reset').onclick = () => {
-  if (send({ type: 'reset' })) pending = true;
+  if (send({ type: 'reset' })) setPending(true);
 };
 document.querySelectorAll('[data-length]').forEach(button => {
   button.onclick = () => {
-    if (send({ type: 'length', length: Number(button.dataset.length) })) pending = true;
+    if (send({ type: 'length', length: Number(button.dataset.length) })) setPending(true);
   };
 });
 document.querySelectorAll('.arcade-nav a').forEach(link => link.addEventListener('click', event => {
