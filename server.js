@@ -6,6 +6,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 const { cleanPoint, cleanFighterInput, cleanBigTwoAction } = require('./lib/protocol');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
+const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
@@ -23,17 +24,8 @@ let nextTankNumber = 1;
 const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
 // Keep the whole tank, including its short cannon, clear of solid geometry.
 const tankRadius = 0.9;
-const TANK_MAP_HALF_SIZE = 120;
-const sectorObstacles = [
-  { x: -20, z: -13, w: 15, d: 10 }, { x: 15, z: -18, w: 9, d: 18 },
-  { x: -4, z: 3, w: 13, d: 13 }, { x: -25, z: 19, w: 10, d: 15 },
-  { x: 23, z: 19, w: 14, d: 9 }, { x: 30, z: -4, w: 7, d: 8 }
-];
-const tankObstacles = [-80, 0, 80].flatMap(offsetX =>
-  [-80, 0, 80].flatMap(offsetZ =>
-    sectorObstacles.map(box => ({ ...box, x: box.x + offsetX, z: box.z + offsetZ }))
-  )
-);
+// The arena is generated once for this server-side match and remains authoritative.
+const tankObstacles = createTankObstacles();
 const penaltyClients = new Map();
 const penaltyPlayers = [];
 const penaltyColors = ['#ed4f45', '#3b71e8'];
@@ -179,6 +171,7 @@ function publicUser({ id, name, color, tool, drawing }) { return { id, name, col
 function tankSnapshot() {
   return {
     type: 'tankState',
+    obstacles: tankObstacles,
     players: [...tankPlayers.values()].map(({ socket, input, lastFire, key, removeTimer, ...player }) => player),
     bullets: bullets.map(({ ownerId, ...bullet }) => bullet)
   };
