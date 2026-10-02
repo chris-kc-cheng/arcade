@@ -66,6 +66,8 @@ docker compose -f compose.yaml -f compose.local.yaml down
 
 ## Deploy on Hostinger with Docker and Caddy
 
+> This deployment requires a **Hostinger VPS** (or another plan with SSH and Docker access). Shared hosting cannot run this app because Arcade needs a persistent Node.js process and WebSocket connections.
+
 The included multi-stage image builds the React application, removes development dependencies, runs as the unprivileged `node` user, and exposes a `/healthz` container health check.
 
 1. Clone the repository on the VPS.
@@ -106,3 +108,32 @@ The included multi-stage image builds the React application, removes development
 Caddy automatically proxies WebSocket upgrades. The Node port is exposed only to the shared Docker network and is not published on the VPS host.
 
 Because state is in memory, run one Node.js instance for now. Multiple instances would need a shared pub/sub and state layer (such as Redis), which is a natural next step before scaling games horizontally.
+
+### Continuous deployment from GitHub
+
+The `Deploy production to Hostinger` GitHub Actions workflow targets the GitHub environment named `production`. It tests the app, builds the production Docker image, uploads an immutable source archive over SSH, and starts it with the production Compose configuration. It runs on pushes to `main` and can also be started manually from the Actions tab. Configure any required reviewers or deployment-branch restrictions under **Settings → Environments → production**.
+
+Prepare the VPS once:
+
+```bash
+# Run as the SSH deployment user. Docker must already be installed.
+docker network create caddy
+sudo mkdir -p /opt/arcade/releases
+sudo chown -R "$USER:$USER" /opt/arcade
+```
+
+Add these repository **Actions secrets** under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `HOSTINGER_HOST` | VPS hostname or IP address |
+| `HOSTINGER_USER` | SSH user with permission to run Docker |
+| `HOSTINGER_SSH_KEY` | Private key for that user (the full multi-line value) |
+| `HOSTINGER_KNOWN_HOSTS` | Pinned host-key line from `ssh-keyscan -H your-vps-host` after verifying its fingerprint in Hostinger |
+| `HOSTINGER_SSH_PORT` | SSH port; optional, defaults to `22` |
+| `HOSTINGER_DEPLOY_PATH` | Release directory; optional, defaults to `/opt/arcade` |
+| `CADDY_NETWORK` | External Docker network; optional, defaults to `caddy` |
+
+Add the matching public key to `~/.ssh/authorized_keys` on the VPS. Keep the Caddy site configuration shown above in the Caddy deployment, and ensure both Caddy and Arcade use the same external network. Then push to `main`, or run **Deploy production to Hostinger** with `workflow_dispatch`.
+
+Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, updates the `current` symlink only after the container health check succeeds, and prints the last container logs if startup fails. The workflow deliberately prevents concurrent production deployments.
