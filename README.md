@@ -1,4 +1,16 @@
-# Doodle Together
+# Arcade
+
+## Gameplay showcase
+
+| Drawing Board | Tank | Penalty Shootout |
+| --- | --- | --- |
+| <img src="public/screenshots/board.png" alt="Collaborative drawing board gameplay" width="320" height="180"> | <img src="public/screenshots/tank.png" alt="Tank arena gameplay" width="320" height="180"> | <img src="public/screenshots/penalty.png" alt="Penalty shootout gameplay" width="320" height="180"> |
+| Collaborate on a shared live drawing canvas with chat. | Drive a first-person 3D tank arena with mouse-box controls. | Take alternating penalty kicks in a two-player shootout. |
+
+| Line Fighter | Snake | Big-D |
+| --- | --- | --- |
+| <img src="public/screenshots/fighter.png" alt="Line Fighter gameplay" width="320" height="180"> | <img src="public/screenshots/snake.png" alt="Snake gameplay" width="320" height="180"> | <img src="public/screenshots/bigtwo.png" alt="Big-D gameplay" width="320" height="180"> |
+| Fight a CPU or another player with stick-figure special moves. | Navigate a retro snake challenge against bot snakes. | Play a shared Big Two card game for one to four players. |
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
@@ -94,28 +106,3 @@ The included multi-stage image builds the React application, removes development
 Caddy automatically proxies WebSocket upgrades. The Node port is exposed only to the shared Docker network and is not published on the VPS host.
 
 Because state is in memory, run one Node.js instance for now. Multiple instances would need a shared pub/sub and state layer (such as Redis), which is a natural next step before scaling games horizontally.
-
-## Arcade games
-
-## Gameplay showcase
-
-| Drawing Board | Tank | Penalty Shootout |
-| --- | --- | --- |
-| ![Collaborative drawing board gameplay](public/screenshots/board.png) | ![Tank arena gameplay](public/screenshots/tank.png) | ![Penalty shootout gameplay](public/screenshots/penalty.png) |
-
-| Line Fighter | Snake | Big-D |
-| --- | --- | --- |
-| ![Line Fighter gameplay](public/screenshots/fighter.png) | ![Snake gameplay](public/screenshots/snake.png) | ![Big-D gameplay](public/screenshots/bigtwo.png) |
-
-- **Line Fighter** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
-- **Tank** is available at `/tank.html` with a nine-sector 3D arena, tactical map, and BZFlag-style mouse-box controls.
-- **Penalty Shootout** is available at `/penalty.html` and follows a five-kicks-per-team format before sudden death.
-- **Snake** is available at `/snake.html` as a retro single-player challenge against bot snakes.
-- **Big-D** is available at `/bigtwo.html` for a shared 1–4 player Big Two card game.
-- Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.
-
-### Big-D
-
-**Big-D (Big Two)** is available at `/bigtwo.html` for one to four active players. The server deals and validates every play, restarts the game when an active player joins or leaves, keeps hands private, and uses zero-sum remaining-card scoring.
-
-![Big-D live multiplayer card table](docs/screenshots/big-d.svg)

@@ -52,6 +52,10 @@ let fighterNotice = '';
 const bigTwoPlayers = new Map();
 let bigTwoOrder = [], nextBigTwoNumber = 1, bigTwoRound = 0;
 let bigTwoGame = { status: 'waiting', turn: '', trick: null, passes: [], openingCard: '', notice: 'Waiting for players' };
+const bigTwoCpus = Array.from({ length: 3 }, (_, index) => ({ id: `cpu-${index + 1}`, name: `CPU ${index + 1}`, computer: true, hand: [], score: 0 }));
+let bigTwoCpuTimer;
+const snakeClients = new Map();
+let nextSnakeNumber = 1;
 const fighterEffects = [];
 
 const contentTypes = {
@@ -461,10 +465,14 @@ function addFighter(socket) {
 }
 
 
-function bigTwoActive() { return bigTwoOrder.slice(0, 4).map(id => bigTwoPlayers.get(id)).filter(Boolean); }
+function bigTwoActive() {
+  const humans = bigTwoOrder.slice(0, 4).map(id => bigTwoPlayers.get(id)).filter(Boolean);
+  return humans.length ? [...humans, ...bigTwoCpus.slice(0, 4 - humans.length)] : [];
+}
 function broadcastBigTwo() {
   const active=bigTwoActive();
-  for(const viewer of bigTwoPlayers.values()) if(viewer.socket.readyState===WebSocket.OPEN) viewer.socket.send(JSON.stringify({type:'bigTwoState',selfId:viewer.id,role:active.includes(viewer)?'player':'spectator',round:bigTwoRound,status:bigTwoGame.status,turn:bigTwoGame.turn,trick:bigTwoGame.trick,openingCard:bigTwoGame.openingCard,notice:bigTwoGame.notice,hand:active.includes(viewer)?viewer.hand:[],players:active.map(p=>({id:p.id,name:p.name,count:p.hand.length,score:p.score||0})),spectators:Math.max(0,bigTwoOrder.length-4)}));
+ for(const viewer of bigTwoPlayers.values()) if(viewer.socket.readyState===WebSocket.OPEN) viewer.socket.send(JSON.stringify({type:'bigTwoState',selfId:viewer.id,role:active.includes(viewer)?'player':'spectator',round:bigTwoRound,status:bigTwoGame.status,turn:bigTwoGame.turn,trick:bigTwoGame.trick,openingCard:bigTwoGame.openingCard,notice:bigTwoGame.notice,hand:active.includes(viewer)?viewer.hand:[],players:active.map(p=>({id:p.id,name:p.name,count:p.hand.length,score:p.score||0,computer:Boolean(p.computer)})),spectators:Math.max(0,bigTwoOrder.length-4)}));
+ scheduleBigTwoCpu();
 }
 function startBigTwo(notice='New deal') {
  const players=bigTwoActive();bigTwoRound++;const shuffled=bigTwoDeck().sort(()=>Math.random()-.5),dealt=shuffled.slice(0,players.length*13);
@@ -474,16 +482,46 @@ function startBigTwo(notice='New deal') {
  bigTwoGame={status:players.length?'playing':'waiting',turn:starter?.id||'',trick:null,passes:[],openingCard,notice};broadcastBigTwo();
 }
 function nextBigTwoTurn(id){const a=bigTwoActive().filter(p=>p.hand.length),i=a.findIndex(p=>p.id===id);return a[(i+1)%a.length]?.id||'';}
+function finishBigTwoPlay(player, cards) {
+ const combo=classify(cards);player.hand=player.hand.filter(c=>!cards.includes(c));bigTwoGame.trick={playerId:player.id,playerName:player.name,cards,kind:combo.kind};bigTwoGame.passes=[];bigTwoGame.notice=`${player.name} played ${combo.kind}`;
+ if(!player.hand.length){let won=0;for(const other of bigTwoActive())if(other!==player){other.score-=other.hand.length;won+=other.hand.length}player.score+=won;bigTwoGame.status='finished';bigTwoGame.turn='';bigTwoGame.notice=`${player.name} wins +${won}`}else bigTwoGame.turn=nextBigTwoTurn(player.id);broadcastBigTwo();
+}
+function passBigTwo(player) {
+ if(!bigTwoGame.trick)return;bigTwoGame.passes.push(player.id);const others=bigTwoActive().filter(x=>x.hand.length&&x.id!==bigTwoGame.trick.playerId);if(others.every(x=>bigTwoGame.passes.includes(x.id))){bigTwoGame.turn=bigTwoGame.trick.playerId;bigTwoGame.trick=null;bigTwoGame.passes=[];bigTwoGame.notice='Trick cleared'}else bigTwoGame.turn=nextBigTwoTurn(player.id);broadcastBigTwo();
+}
+function scheduleBigTwoCpu() {
+ clearTimeout(bigTwoCpuTimer);
+ const cpu=bigTwoActive().find(player=>player.id===bigTwoGame.turn&&player.computer);
+ if(!cpu||bigTwoGame.status!=='playing')return;
+ bigTwoCpuTimer=setTimeout(()=>{
+  if(bigTwoGame.status!=='playing'||bigTwoGame.turn!==cpu.id)return;
+  const opening=bigTwoActive().every(player=>player.hand.length===13)&&cpu.hand.includes(bigTwoGame.openingCard);
+  const cards=!bigTwoGame.trick||opening?[opening?bigTwoGame.openingCard:cpu.hand[0]]:bigTwoGame.trick.cards.length===1?cpu.hand.find(card=>beats([card],bigTwoGame.trick))? [cpu.hand.find(card=>beats([card],bigTwoGame.trick))]:null:null;
+  if(cards)finishBigTwoPlay(cpu,cards);else passBigTwo(cpu);
+ },550);
+}
 function addBigTwo(socket){
  const id=`big-${nextBigTwoNumber++}`,p={socket,id,name:`PLAYER ${String(nextBigTwoNumber-1).padStart(2,'0')}`,hand:[],score:0};bigTwoPlayers.set(id,p);bigTwoOrder.push(id);socket.isAlive=true;socket.on('pong',()=>socket.isAlive=true);
  if(bigTwoOrder.length<=4)startBigTwo(`${p.name} joined — new deal`);else broadcastBigTwo();
  socket.on('message',raw=>{let m;try{m=cleanBigTwoAction(JSON.parse(raw.toString()));}catch{return}if(!m||!bigTwoActive().includes(p))return;if(m.type==='reset'){startBigTwo(`${p.name} reset the table`);return}if(bigTwoGame.status!=='playing'||bigTwoGame.turn!==id)return;
-  if(m.type==='pass'){if(!bigTwoGame.trick)return;bigTwoGame.passes.push(id);const others=bigTwoActive().filter(x=>x.hand.length&&x.id!==bigTwoGame.trick.playerId);if(others.every(x=>bigTwoGame.passes.includes(x.id))){bigTwoGame.turn=bigTwoGame.trick.playerId;bigTwoGame.trick=null;bigTwoGame.passes=[];bigTwoGame.notice='Trick cleared'}else bigTwoGame.turn=nextBigTwoTurn(id);broadcastBigTwo();return}
+  if(m.type==='pass'){passBigTwo(p);return}
   if(!m.cards.every(c=>p.hand.includes(c))||!beats(m.cards,bigTwoGame.trick))return;if(!bigTwoGame.trick&&bigTwoActive().every(x=>x.hand.length===13)&&!m.cards.includes(bigTwoGame.openingCard))return;
-  const combo=classify(m.cards);p.hand=p.hand.filter(c=>!m.cards.includes(c));bigTwoGame.trick={playerId:id,playerName:p.name,cards:m.cards,kind:combo.kind};bigTwoGame.passes=[];bigTwoGame.notice=`${p.name} played ${combo.kind}`;
-  if(!p.hand.length){let won=0;for(const x of bigTwoActive())if(x!==p){x.score-=x.hand.length;won+=x.hand.length}p.score+=won;bigTwoGame.status='finished';bigTwoGame.turn='';bigTwoGame.notice=`${p.name} wins +${won}`}else bigTwoGame.turn=nextBigTwoTurn(id);broadcastBigTwo();
+  finishBigTwoPlay(p,m.cards);
  });
  socket.on('close',()=>{const active=bigTwoOrder.indexOf(id)<4;bigTwoPlayers.delete(id);bigTwoOrder=bigTwoOrder.filter(x=>x!==id);if(active)startBigTwo(`${p.name} left — new deal`);else broadcastBigTwo()});
+}
+
+function broadcastSnakePresence() {
+  const message = JSON.stringify({ type: 'snakePresence', count: snakeClients.size });
+  for (const client of snakeClients.values()) if (client.socket.readyState === WebSocket.OPEN) client.socket.send(message);
+}
+function addSnake(socket) {
+  const id = `snake-${nextSnakeNumber++}`;
+  snakeClients.set(id, { id, socket });
+  socket.isAlive = true;
+  socket.on('pong', () => { socket.isAlive = true; });
+  broadcastSnakePresence();
+  socket.on('close', () => { snakeClients.delete(id); broadcastSnakePresence(); });
 }
 
 wss.on('connection', (socket, request) => {
@@ -503,7 +541,7 @@ wss.on('connection', (socket, request) => {
   }
   if (room === 'fighter') { addFighter(socket); return; }
   if (room === 'bigtwo') { addBigTwo(socket); return; }
-  if (room === 'snake') { socket.on('pong', () => { socket.isAlive = true; }); return; }
+  if (room === 'snake') { addSnake(socket); return; }
   key = uniqueClientKey(users, key);
   const returning = users.get(key);
   if (returning) {

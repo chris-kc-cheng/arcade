@@ -12,7 +12,6 @@ const COLS = 36;
 const ROWS = 25;
 const CELL = 20;
 const COLORS = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff70b7'];
-const NAMES = ['PLAYER 1', 'SCARLET', 'CYAN-09', 'GOLDIE', 'VIPER', 'PIXIE'];
 const STARTS = [
   { x: 7, y: 13, dx: 1, dy: 0 }, { x: 29, y: 4, dx: -1, dy: 0 },
   { x: 29, y: 20, dx: -1, dy: 0 }, { x: 18, y: 5, dx: 0, dy: 1 },
@@ -28,10 +27,11 @@ let accumulator = 0;
 let sound = true;
 let audio;
 let highScore = Number(localStorage.getItem('snakePartyHigh') || 0);
+let playerCount = 1;
 
 function createSnakes() {
-  return STARTS.map((start, index) => ({
-    name: NAMES[index], color: COLORS[index], direction: { x: start.dx, y: start.dy },
+  return STARTS.slice(0, playerCount).map((start, index) => ({
+    color: COLORS[index], direction: { x: start.dx, y: start.dy },
     nextDirection: { x: start.dx, y: start.dy }, score: 0, alive: true,
     body: Array.from({ length: index ? 4 : 5 }, (_, part) => ({ x: start.x - start.dx * part, y: start.y - start.dy * part }))
   }));
@@ -42,7 +42,7 @@ function reset() {
   food = openCell();
   gameOver = false;
   paused = false;
-  pauseCard.hidden = true;
+  pauseCard.hidden = true; pauseCard.classList.remove('is-paused');
   accumulator = 0;
   updateUI();
   draw();
@@ -60,7 +60,7 @@ function start() {
   running = true;
   paused = false;
   startCard.classList.add('hide');
-  pauseCard.hidden = true;
+  pauseCard.hidden = true; pauseCard.classList.remove('is-paused');
   beep(520, .05);
 }
 
@@ -132,10 +132,7 @@ function updateUI() {
   scoreNode.textContent = String(playerScore).padStart(4,'0');
   highScoreNode.textContent = String(Math.max(highScore, playerScore)).padStart(4,'0');
   document.querySelector('#missionProgress').textContent = `${playerScore}/25`;
-  roster.innerHTML = snakes.map((snake,index) => `<div class="player ${index === 0 ? 'you' : ''}">
-    <span class="player-snake" style="--player:${snake.color}"><i></i><i></i><i></i></span>
-    <span><strong>${snake.name}</strong><small>${snake.alive ? (index ? 'BOT HUNTER' : 'HUMAN') : 'RESPAWNING…'}</small></span>
-    <b>${String(snake.score).padStart(2,'0')}</b></div>`).join('');
+  roster.innerHTML = `<div class="player you"><span class="player-snake" style="--player:${COLORS[0]}"><i></i><i></i><i></i></span><span><strong>${snakes.length} SNAKE${snakes.length===1?'':'S'} ACTIVE</strong><small>YOUR TAIL: ${snakes[0]?.body.length||0}</small></span><b>${String(playerScore).padStart(2,'0')}</b></div>`;
 }
 
 function drawGrid() {
@@ -170,8 +167,8 @@ function beep(frequency,duration){
 }
 
 function steer(x,y){const snake=snakes[0];if(!snake||!snake.alive)return;if(x!==-snake.direction.x||y!==-snake.direction.y)snake.nextDirection={x,y}}
-function togglePause(){if(!running||gameOver){start();return}paused=!paused;pauseCard.hidden=!paused;beep(paused?180:520,.04)}
-document.addEventListener('keydown',event=>{const key=event.key.toLowerCase();if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','enter','p'].includes(key))event.preventDefault();if(key==='enter'&&!running)start();if(key==='arrowup'||key==='w')steer(0,-1);if(key==='arrowdown'||key==='s')steer(0,1);if(key==='arrowleft'||key==='a')steer(-1,0);if(key==='arrowright'||key==='d')steer(1,0);if(key==='p')togglePause();if(key==='r'){reset();start()}});
+function togglePause(){if(!running||gameOver){start();return}paused=!paused;pauseCard.hidden=!paused;pauseCard.classList.toggle('is-paused',paused);beep(paused?180:520,.04)}
+window.addEventListener('keydown',event=>{const key=event.key.toLowerCase(),pauseKey=event.code==='KeyP'||key==='p';if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','enter'].includes(key)||pauseKey)event.preventDefault();if(pauseKey){togglePause();return}if(key==='enter'&&!running)start();if(key==='arrowup'||key==='w')steer(0,-1);if(key==='arrowdown'||key==='s')steer(0,1);if(key==='arrowleft'||key==='a')steer(-1,0);if(key==='arrowright'||key==='d')steer(1,0);if(key==='r'){reset();start()}},{capture:true});
 document.querySelector('#startButton').addEventListener('click',start);
 soundButton.addEventListener('click',()=>{sound=!sound;soundButton.setAttribute('aria-pressed',sound);soundButton.innerHTML=`<span>${sound?'♪':'×'}</span> SOUND: ${sound?'ON':'OFF'}`;if(sound)beep(440,.05)});
 reset();highScoreNode.textContent=String(highScore).padStart(4,'0');requestAnimationFrame(loop);
@@ -179,7 +176,7 @@ reset();highScoreNode.textContent=String(highScore).padStart(4,'0');requestAnima
 function connectPlatform(){
   const protocol=location.protocol==='https:'?'wss':'ws';
   platformSocket=new WebSocket(`${protocol}://${location.host}?room=snake`);
-  platformSocket.onmessage=event=>{const message=JSON.parse(event.data);if(message.type==='switchGame'&&message.path!==location.pathname)location.assign(message.path);};
+  platformSocket.onmessage=event=>{const message=JSON.parse(event.data);if(message.type==='switchGame'&&message.path!==location.pathname)location.assign(message.path);if(message.type==='snakePresence'){const count=Math.max(1,Math.min(STARTS.length,Number(message.count)||1));if(count!==playerCount){playerCount=count;reset();}}};
   platformSocket.onclose=()=>setTimeout(connectPlatform,1200);
 }
 document.querySelector('.screen-title').textContent='SNAKE';
