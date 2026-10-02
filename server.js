@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint, cleanFighterInput, cleanBigTwoAction } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction } = require('./lib/protocol');
+const { paragraphs: typingParagraphs, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
@@ -56,6 +57,9 @@ let snakeRunning = false;
 let snakePaused = false;
 const snakeColors = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff70b7'];
 const fighterEffects = [];
+const typingPlayers = new Map();
+let typingOrder = [], nextTypingNumber = 1, typingTimer;
+let typingGame = { phase: 'waiting', difficulty: 'easy', countdownEndsAt: 0, startedAt: 0 };
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -124,9 +128,9 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html']]);
-const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html']]);
+const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing']]);
 let currentGamePath = '/';
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
@@ -210,6 +214,7 @@ function resetArcadeState() {
   fighterRound++;
   resetFighterRound('ARCADE RESET');
   if (fighters.size) fighterBroadcast();
+  if (typingPlayers.size) resetTypingGame();
   broadcast({ type: 'clear', by: 'Game switch' });
 }
 function attachPlatformMessages(socket) {
@@ -579,6 +584,61 @@ function addBigTwo(socket){
  socket.on('close',()=>{const active=bigTwoOrder.indexOf(id)<4;bigTwoPlayers.delete(id);bigTwoOrder=bigTwoOrder.filter(x=>x!==id);if(active)startBigTwo(`${p.name} left — new deal`);else broadcastBigTwo()});
 }
 
+function activeTypists() { return typingOrder.slice(0, 2).map(key => typingPlayers.get(key)).filter(Boolean); }
+function typingPublic(player, paragraph, now) {
+  return { id: player.id, name: player.name, length: player.value.length, value: player.value, finished: Boolean(player.finishedAt), stats: player.finishedAt ? typingStats(player, paragraph, now) : null };
+}
+function broadcastTyping() {
+  const paragraph = typingParagraphs[typingGame.difficulty], now = Date.now(), active = activeTypists();
+  for (const viewer of typingPlayers.values()) if (viewer.socket?.readyState === WebSocket.OPEN) {
+    viewer.socket.send(JSON.stringify({ type: 'typingState', selfId: viewer.id, role: active.includes(viewer) ? 'player' : 'spectator', phase: typingGame.phase, difficulty: typingGame.difficulty, countdownEndsAt: typingGame.countdownEndsAt, serverTime: now, paragraph, players: active.map(p => typingPublic(p, paragraph, now)), spectators: Math.max(0, typingOrder.length - 2) }));
+  }
+}
+function clearTypingPlayer(player) { Object.assign(player, { value: '', startedAt: 0, finishedAt: 0, keystrokes: 0, correctKeystrokes: 0, backspaces: 0 }); }
+function resetTypingGame() {
+  clearTimeout(typingTimer); activeTypists().forEach(clearTypingPlayer);
+  if (activeTypists().length === 2) {
+    typingGame.phase = 'countdown'; typingGame.countdownEndsAt = Date.now() + 3000; typingGame.startedAt = 0;
+    typingTimer = setTimeout(() => { typingGame.phase = 'racing'; typingGame.startedAt = Date.now(); activeTypists().forEach(p => { p.startedAt = typingGame.startedAt; }); broadcastTyping(); }, 3000);
+    typingTimer.unref?.();
+  } else { typingGame.phase = 'waiting'; typingGame.countdownEndsAt = 0; typingGame.startedAt = 0; }
+  broadcastTyping();
+}
+function addTyping(socket, key) {
+  key = uniqueClientKey(typingPlayers, key);
+  let player = typingPlayers.get(key);
+  if (player) { clearTimeout(player.removeTimer); player.removeTimer = null; player.socket = socket; }
+  else {
+    const number = nextTypingNumber++;
+    player = { key, socket, id: `typist-${number}`, name: profileName(socket) || `Typist ${number}`, value: '', startedAt: 0, finishedAt: 0, keystrokes: 0, correctKeystrokes: 0, backspaces: 0, removeTimer: null };
+    typingPlayers.set(key, player); typingOrder.push(key);
+    if (typingOrder.length <= 2 && typingGame.phase !== 'racing') resetTypingGame();
+  }
+  socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; }); broadcastTyping();
+  socket.on('message', raw => {
+    if (player.socket !== socket) return;
+    let source; try { source = JSON.parse(raw.toString()); } catch { return; }
+    if (source.type === 'setName') { const name = profileName(socket); if (name) { player.name = name; broadcastTyping(); } return; }
+    const message = cleanTypingAction(source); const active = activeTypists();
+    if (!message || !active.includes(player)) return;
+    if (message.type === 'reset') { resetTypingGame(); return; }
+    if (message.type === 'difficulty') { if (typingGame.phase === 'racing') return; typingGame.difficulty = message.difficulty; resetTypingGame(); return; }
+    if (typingGame.phase !== 'racing' || player.finishedAt) return;
+    const old = player.value, value = message.value, paragraph = typingParagraphs[typingGame.difficulty];
+    if (value.length > paragraph.length || Math.abs(value.length - old.length) > 1 || (value.length === old.length && value !== old)) return;
+    if (value.length < old.length) { player.backspaces++; }
+    else if (value.length > old.length) { player.keystrokes++; if (value.at(-1) === paragraph[value.length - 1]) player.correctKeystrokes++; }
+    player.value = value;
+    if (value === paragraph) player.finishedAt = Date.now();
+    if (active.length === 2 && active.every(p => p.finishedAt)) typingGame.phase = 'finished';
+    broadcastTyping();
+  });
+  socket.on('close', () => {
+    if (player.socket !== socket) return; player.socket = null; broadcastTyping();
+    scheduleRemoval(player, () => { const wasActive = typingOrder.indexOf(key) < 2; typingPlayers.delete(key); typingOrder = typingOrder.filter(item => item !== key); if (wasActive) resetTypingGame(); else broadcastTyping(); });
+  });
+}
+
 function snakeOpenCell() {
   const occupied = new Set(
     [...snakeClients.values()].flatMap(player => player.body).map(({ x, y }) => `${x},${y}`)
@@ -731,6 +791,7 @@ wss.on('connection', (socket, request) => {
   if (room === 'fighter') { addFighter(socket); return; }
   if (room === 'bigtwo') { addBigTwo(socket); return; }
   if (room === 'snake') { addSnake(socket); return; }
+  if (room === 'typing') { addTyping(socket, key); return; }
   key = uniqueClientKey(users, key);
   const returning = users.get(key);
   if (returning) {
