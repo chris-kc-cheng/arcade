@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction } = require('./lib/protocol');
-const { paragraphs: typingParagraphs, typingStats } = require('./lib/typing');
+const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
@@ -59,7 +59,7 @@ const snakeColors = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff
 const fighterEffects = [];
 const typingPlayers = new Map();
 let typingOrder = [], nextTypingNumber = 1, typingTimer;
-let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', countdownEndsAt: 0, startedAt: 0 };
+let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -589,7 +589,7 @@ function typingPublic(player, paragraph, now) {
   return { id: player.id, name: player.name, length: player.value.length, value: player.value, finished: Boolean(player.finishedAt), stats: player.finishedAt ? typingStats(player, paragraph, now) : null };
 }
 function broadcastTyping() {
-  const paragraph = typingParagraphs[typingGame.difficulty], now = Date.now(), active = activeTypists();
+  const paragraph = typingGame.paragraph, now = Date.now(), active = activeTypists();
   for (const viewer of typingPlayers.values()) if (viewer.socket?.readyState === WebSocket.OPEN) {
     viewer.socket.send(JSON.stringify({ type: 'typingState', selfId: viewer.id, role: active.includes(viewer) ? 'player' : 'spectator', phase: typingGame.phase, mode: typingGame.mode, difficulty: typingGame.difficulty, countdownEndsAt: typingGame.countdownEndsAt, serverTime: now, paragraph, players: active.map(p => typingPublic(p, paragraph, now)), spectators: Math.max(0, typingOrder.length - active.length) }));
   }
@@ -597,11 +597,15 @@ function broadcastTyping() {
 function clearTypingPlayer(player) { Object.assign(player, { value: '', startedAt: 0, finishedAt: 0, keystrokes: 0, correctKeystrokes: 0, backspaces: 0 }); }
 function resetTypingGame() {
   clearTimeout(typingTimer); activeTypists().forEach(clearTypingPlayer);
+  typingGame.paragraph = randomParagraph(typingGame.difficulty, typingGame.paragraph);
   const requiredPlayers = typingGame.mode === 'solo' ? 1 : 2;
   if (activeTypists().length === requiredPlayers) {
-    typingGame.phase = 'countdown'; typingGame.countdownEndsAt = Date.now() + 3000; typingGame.startedAt = 0;
-    typingTimer = setTimeout(() => { typingGame.phase = 'racing'; typingGame.startedAt = Date.now(); activeTypists().forEach(p => { p.startedAt = typingGame.startedAt; }); broadcastTyping(); }, 3000);
-    typingTimer.unref?.();
+    if (typingGame.mode === 'solo') { typingGame.phase = 'ready'; typingGame.countdownEndsAt = 0; typingGame.startedAt = 0; }
+    else {
+      typingGame.phase = 'countdown'; typingGame.countdownEndsAt = Date.now() + 3000; typingGame.startedAt = 0;
+      typingTimer = setTimeout(() => { typingGame.phase = 'racing'; typingGame.startedAt = Date.now(); activeTypists().forEach(p => { p.startedAt = typingGame.startedAt; }); broadcastTyping(); }, 3000);
+      typingTimer.unref?.();
+    }
   } else { typingGame.phase = 'waiting'; typingGame.countdownEndsAt = 0; typingGame.startedAt = 0; }
   broadcastTyping();
 }
@@ -624,14 +628,18 @@ function addTyping(socket, key) {
     if (!message || !active.includes(player)) return;
     if (message.type === 'reset') { resetTypingGame(); return; }
     if (message.type === 'mode') { if (typingGame.phase === 'racing') return; typingGame.mode = message.mode; resetTypingGame(); return; }
-    if (message.type === 'difficulty') { if (typingGame.phase === 'racing') return; typingGame.difficulty = message.difficulty; resetTypingGame(); return; }
-    if (typingGame.phase !== 'racing' || player.finishedAt) return;
-    const old = player.value, value = message.value, paragraph = typingParagraphs[typingGame.difficulty];
+    if (message.type === 'difficulty') { typingGame.difficulty = message.difficulty; resetTypingGame(); return; }
+    if (!['ready', 'racing'].includes(typingGame.phase) || player.finishedAt) return;
+    const old = player.value, value = message.value, paragraph = typingGame.paragraph;
     if (value.length > paragraph.length || Math.abs(value.length - old.length) > 1 || (value.length === old.length && value !== old)) return;
+    if (typingGame.phase === 'ready') {
+      if (!value.length) return;
+      typingGame.phase = 'racing'; typingGame.startedAt = Date.now(); player.startedAt = typingGame.startedAt;
+    }
     if (value.length < old.length) { player.backspaces++; }
     else if (value.length > old.length) { player.keystrokes++; if (value.at(-1) === paragraph[value.length - 1]) player.correctKeystrokes++; }
     player.value = value;
-    if (value === paragraph) player.finishedAt = Date.now();
+    if (value.length === paragraph.length) player.finishedAt = Date.now();
     if (active.length === (typingGame.mode === 'solo' ? 1 : 2) && active.every(p => p.finishedAt)) typingGame.phase = 'finished';
     broadcastTyping();
   });
