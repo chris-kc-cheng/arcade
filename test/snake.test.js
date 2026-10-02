@@ -25,6 +25,7 @@ test('Snake accepts only cardinal movement and known shared controls', () => {
 });
 
 test('two Snake clients receive the same non-overlapping server state', async () => {
+  process.env.DISCONNECT_GRACE_MS = '20';
   const { server, wss } = require('../server');
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `ws://127.0.0.1:${server.address().port}?room=snake`;
@@ -49,6 +50,32 @@ test('two Snake clients receive the same non-overlapping server state', async ()
   assert.equal(new Set(occupied).size, occupied.length);
   clients.forEach(client => client.close());
   await Promise.all(clients.map(client => new Promise(resolve => client.once('close', resolve))));
+
+  const openDoodle = key => new Promise(resolve => {
+    const client = new WebSocket(`ws://127.0.0.1:${server.address().port}?room=doodle&client=${key}`);
+    client.on('message', data => {
+      const message = JSON.parse(data.toString());
+      if (message.type === 'welcome') resolve({ client, welcome: message });
+    });
+  });
+  const first = await openDoodle('doodle-client-one');
+  const twoConnected = new Promise(resolve => first.client.on('message', data => {
+    const message = JSON.parse(data.toString());
+    if (message.type === 'presence' && message.users.length === 2) resolve(message);
+  }));
+  const second = await openDoodle('doodle-client-two');
+  await twoConnected;
+  const departed = new Promise(resolve => first.client.on('message', data => {
+    const message = JSON.parse(data.toString());
+    if (message.type === 'left' && message.userId === second.welcome.self.id) resolve(message);
+  }));
+  second.client.close();
+  assert.equal((await departed).users.length, 1);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  const replacement = await openDoodle('doodle-client-two');
+  assert.notEqual(replacement.welcome.self.id, second.welcome.self.id);
+  first.client.close(); replacement.client.close();
+  await Promise.all([first.client, replacement.client].map(client => new Promise(resolve => client.once('close', resolve))));
   await new Promise(resolve => wss.close(resolve));
   await new Promise(resolve => server.close(resolve));
 });

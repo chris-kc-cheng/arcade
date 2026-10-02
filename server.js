@@ -8,6 +8,7 @@ const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo')
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 
 const PORT = Number(process.env.PORT) || 3000;
+const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
@@ -170,7 +171,7 @@ function attachPlatformMessages(socket) {
 }
 
 function publicUsers() {
-  return [...users.values()].map(publicUser);
+  return [...users.values()].filter(user => user.socket?.readyState === WebSocket.OPEN).map(publicUser);
 }
 
 function publicUser({ id, name, color, tool, drawing }) { return { id, name, color, tool, drawing }; }
@@ -194,7 +195,11 @@ function uniqueClientKey(records, key) {
 
 function scheduleRemoval(record, remove) {
   clearTimeout(record.removeTimer);
-  record.removeTimer = setTimeout(() => remove(record), 10000);
+  record.removeTimer = setTimeout(() => {
+    record.removeTimer = null;
+    remove(record);
+  }, DISCONNECT_GRACE_MS);
+  record.removeTimer.unref?.();
 }
 
 function randomSpawn() {
@@ -236,6 +241,7 @@ function addTank(socket, requestedKey) {
   const returning = tankPlayers.get(key);
   if (returning) {
     clearTimeout(returning.removeTimer);
+    returning.removeTimer = null;
     returning.socket = socket;
     returning.input = { forward: 0, turn: 0, aimX: 0 };
     socket.isAlive = true;
@@ -350,6 +356,7 @@ function addPenalty(socket, requestedKey) {
   let client = penaltyClients.get(key);
   if (client) {
     clearTimeout(client.removeTimer);
+    client.removeTimer = null;
     client.socket = socket;
   } else {
     const number = nextPenaltyNumber++;
@@ -476,7 +483,8 @@ function bigTwoActive() {
 }
 function broadcastBigTwo() {
   const active=bigTwoActive();
- for(const viewer of bigTwoPlayers.values()) if(viewer.socket.readyState===WebSocket.OPEN) viewer.socket.send(JSON.stringify({type:'bigTwoState',selfId:viewer.id,role:active.includes(viewer)?'player':'spectator',round:bigTwoRound,status:bigTwoGame.status,turn:bigTwoGame.turn,trick:bigTwoGame.trick,openingCard:bigTwoGame.openingCard,notice:bigTwoGame.notice,hand:active.includes(viewer)?viewer.hand:[],players:active.map(p=>({id:p.id,name:p.name,count:p.hand.length,score:p.score||0,computer:Boolean(p.computer)})),spectators:Math.max(0,bigTwoOrder.length-4)}));
+  const onlineCount=[...bigTwoPlayers.values()].filter(player=>player.socket.readyState===WebSocket.OPEN).length;
+ for(const viewer of bigTwoPlayers.values()) if(viewer.socket.readyState===WebSocket.OPEN) viewer.socket.send(JSON.stringify({type:'bigTwoState',onlineCount,selfId:viewer.id,role:active.includes(viewer)?'player':'spectator',round:bigTwoRound,status:bigTwoGame.status,turn:bigTwoGame.turn,trick:bigTwoGame.trick,openingCard:bigTwoGame.openingCard,notice:bigTwoGame.notice,hand:active.includes(viewer)?viewer.hand:[],players:active.map(p=>({id:p.id,name:p.name,count:p.hand.length,score:p.score||0,computer:Boolean(p.computer)})),spectators:Math.max(0,bigTwoOrder.length-4)}));
  scheduleBigTwoCpu();
 }
 function startBigTwo(notice='New deal') {
@@ -670,6 +678,7 @@ wss.on('connection', (socket, request) => {
   const returning = users.get(key);
   if (returning) {
     clearTimeout(returning.removeTimer);
+    returning.removeTimer = null;
     returning.socket = socket;
     socket.isAlive = true;
     socket.send(JSON.stringify({ type: 'welcome', self: publicUser(returning), users: publicUsers(), history, chatHistory, clientId: key }));
@@ -740,9 +749,9 @@ function attachDoodleMessages(socket, user, key) {
     if (user.socket !== socket) return;
     user.socket = null;
     user.drawing = false;
-    scheduleRemoval(user, record => {
+    broadcast({ type: 'left', userId: user.id, users: publicUsers() });
+    scheduleRemoval(user, () => {
       users.delete(key);
-      broadcast({ type: 'left', userId: record.id, users: publicUsers() });
     });
   });
 }
