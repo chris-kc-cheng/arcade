@@ -26,4 +26,6 @@ test('Hostinger workflow tests before invoking the deployment script', () => {
   assert.ok(testStep < deployStep);
   assert.match(workflow, /HOSTINGER_KNOWN_HOSTS/);
   assert.match(workflow, /concurrency:/);
+  assert.match(workflow, /^name: Deploy production to Hostinger$/m);
+  assert.match(workflow, /^    environment: production$/m);
 });

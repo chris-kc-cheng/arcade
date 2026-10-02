@@ -1,4 +1,4 @@
-name: Deploy to Hostinger
+name: Deploy production to Hostinger
 
 on:
   push:
@@ -14,8 +14,10 @@ concurrency:
 
 jobs:
   test-and-deploy:
+    name: Test and deploy production
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: production
     env:
       DEPLOY_PATH: ${{ secrets.HOSTINGER_DEPLOY_PATH }}
       SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
