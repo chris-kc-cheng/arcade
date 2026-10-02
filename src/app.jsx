@@ -65,7 +65,7 @@ function TankLegacy({onSwitch}){useStylesheet('/tank.css');const canvas=useRef()
 
 function Tank({onSwitch}){
   useStylesheet('/tank.css');
-  const canvas=useRef(),minimap=useRef(),stateRef=useRef({players:[],bullets:[]}),selfRef=useRef(),keys=useRef(new Set()),aim=useRef({x:0,y:0}),[scores,setScores]=useState([]),[alive,setAlive]=useState(true);
+  const canvas=useRef(),minimap=useRef(),stateRef=useRef({players:[],bullets:[],obstacles:[]}),selfRef=useRef(),keys=useRef(new Set()),aim=useRef({x:0,y:0}),[scores,setScores]=useState([]),[alive,setAlive]=useState(true);
   const{online,send}=useRoom('tanks',message=>{if(message.type==='tankWelcome')selfRef.current=message.selfId;if(message.type==='tankState'){stateRef.current=message;setScores(message.players);const me=message.players.find(p=>p.id===selfRef.current);setAlive(me?.alive!==false);}},onSwitch);
   useEffect(()=>mountTankRenderer({canvas:canvas.current,minimap:minimap.current,stateRef,selfRef,keys,aim,send}),[send]);
   const me=scores.find(player=>player.id===selfRef.current);
