@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction, cleanPollAction } = require('./lib/protocol');
 const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
@@ -62,6 +62,7 @@ const typingPlayers = new Map();
 let typingOrder = [], nextTypingNumber = 1, typingTimer;
 let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
 const wordleGames = new Map();
+const polls = new Map();
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -130,9 +131,9 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html']]);
-const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html']]);
+const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 let currentGamePath = '/';
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
@@ -842,6 +843,75 @@ function addWordle(socket, key) {
   });
 }
 
+function pollState(poll, socket) {
+  const isCreator = socket.pollCreator === poll.creatorToken;
+  const totals = poll.choices.map((_, index) => poll.responses.filter(response => response.choice === index).length);
+  const participants = [...new Map([...poll.sockets].filter(client => client.platformProfile).map(client => {
+    const profile = client.platformProfile;
+    return [profile.key, { id: profile.key, name: profile.name, ip: profile.ip, room: `poll ${poll.id}`, connectedAt: profile.connectedAt }];
+  })).values()];
+  return {
+    type: 'pollState', id: poll.id, question: poll.question, choices: poll.choices,
+    allowText: poll.allowText, connected: participants.length, participants, submitted: poll.responses.length,
+    hasVoted: poll.voters.has(socket.pollClient), isCreator, showingResults: poll.showingResults,
+    results: poll.showingResults || isCreator ? { totals, texts: poll.responses.map(response => response.text).filter(Boolean) } : undefined
+  };
+}
+
+function broadcastPoll(poll) {
+  for (const client of poll.sockets) if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(pollState(poll, client)));
+}
+
+function joinPoll(socket, id, client, creatorToken) {
+  const poll = polls.get(id);
+  if (!poll) {
+    socket.send(JSON.stringify({ type: 'pollMissing' }));
+    return;
+  }
+  socket.pollClient = client;
+  socket.pollCreator = creatorToken;
+  poll.sockets.add(socket);
+  broadcastPoll(poll);
+  socket.on('message', raw => {
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    const action = cleanPollAction(message);
+    if (!action) return;
+    if (action.type === 'vote') {
+      if (poll.showingResults || poll.voters.has(client) || action.choice >= poll.choices.length || (!poll.allowText && action.text)) return;
+      poll.voters.add(client);
+      poll.responses.push({ choice: action.choice, text: poll.allowText ? action.text : '' });
+    } else {
+      if (action.creatorToken !== poll.creatorToken) return;
+      if (action.type === 'showResults') poll.showingResults = true;
+      if (action.type === 'resetPoll') {
+        poll.responses = [];
+        poll.voters.clear();
+        poll.showingResults = false;
+      }
+    }
+    broadcastPoll(poll);
+  });
+  socket.on('close', () => { poll.sockets.delete(socket); broadcastPoll(poll); });
+}
+
+function addPollLobby(socket, request, client, creatorToken) {
+  const url = new URL(request.url, 'http://localhost');
+  const id = (url.searchParams.get('poll') || '').toUpperCase();
+  if (id) { joinPoll(socket, id, client, creatorToken); return; }
+  socket.on('message', raw => {
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    const action = cleanPollAction(message);
+    if (!action || action.type !== 'createPoll') return;
+    let pollId;
+    do { pollId = crypto.randomBytes(3).toString('hex').toUpperCase(); } while (polls.has(pollId));
+    const token = crypto.randomBytes(24).toString('base64url');
+    polls.set(pollId, { ...action, id: pollId, creatorToken: token, sockets: new Set(), responses: [], voters: new Set(), showingResults: false });
+    socket.send(JSON.stringify({ type: 'pollCreated', id: pollId, creatorToken: token }));
+  });
+}
+
 wss.on('connection', (socket, request) => {
   socket.isAlive = true;
   attachPlatformMessages(socket);
@@ -863,6 +933,7 @@ wss.on('connection', (socket, request) => {
   if (room === 'snake') { addSnake(socket); return; }
   if (room === 'typing') { addTyping(socket, key); return; }
   if (room === 'wordle') { addWordle(socket, key); return; }
+  if (room === 'poll') { addPollLobby(socket, request, key, url.searchParams.get('creator') || ''); return; }
   key = uniqueClientKey(users, key);
   const returning = users.get(key);
   if (returning) {
