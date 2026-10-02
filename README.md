@@ -17,7 +17,12 @@
 | <img src="public/screenshots/typing.svg" alt="Type/Off solo and two-player typing challenge" width="640" height="360"> |
 | Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. |
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, and a typing challenge with solo and head-to-head modes. Game state and presence live only in the Node.js process and reset whenever it restarts.
+| Many Words |
+| --- |
+| <img src="public/screenshots/wordle.svg" alt="Many Words variable-length solo word game" width="640" height="360"> |
+| Play a private Wordle-style puzzle with four-, five-, six-, seven-, or eight-letter words from a 1,899-word library. |
+
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, and the solo variable-length Many Words game. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
