@@ -136,4 +136,4 @@ Add these repository **Actions secrets** under **Settings → Secrets and variab
 
 Add the matching public key to `~/.ssh/authorized_keys` on the VPS. Keep the Caddy site configuration shown above in the Caddy deployment, and ensure both Caddy and Arcade use the same external network. Then push to `main`, or run **Deploy production to Hostinger** with `workflow_dispatch`.
 
-Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, updates the `current` symlink only after the container health check succeeds, and prints the last container logs if startup fails. The workflow deliberately prevents concurrent production deployments.
+Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, including the generated browser bundle at `public/react-app.js`, updates the `current` symlink only after the container health check succeeds, and prints the last container logs if startup fails. The workflow deliberately prevents concurrent production deployments.
