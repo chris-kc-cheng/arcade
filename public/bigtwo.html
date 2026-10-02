@@ -7,11 +7,12 @@
   <title>BIG-D — Big Two</title>
   <link rel="stylesheet" href="/bigtwo.css">
   <style>.card{line-height:20px}.card:after{left:7px;top:34px;right:auto;bottom:auto;font-size:20px}.card[type="button"]{appearance:none;-webkit-appearance:none}</style>
+  <link rel="stylesheet" href="/platform.css">
 </head>
 <body>
   <header>
     <nav class="arcade-nav" aria-label="Arcade games">
-      <a href="/" title="Drawing board" aria-label="Drawing board">🖊️</a><a href="/tank.html" title="Tank" aria-label="Tank">🚜</a><a href="/penalty.html" title="Penalty shootout" aria-label="Penalty shootout">⚽</a><a href="/fighter.html" title="Line Fighter" aria-label="Line Fighter">👊</a><a href="/snake.html" title="Snake" aria-label="Snake">🐍</a><a href="/bigtwo.html" title="Big-D" aria-label="Big-D" aria-current="page">♦</a>
+      <a href="/" title="Drawing board" aria-label="Drawing board">🖊️</a><a href="/tank" title="Tank" aria-label="Tank">🚜</a><a href="/penalty" title="Penalty shootout" aria-label="Penalty shootout">⚽</a><a href="/fighter" title="Line Fighter" aria-label="Line Fighter">👊</a><a href="/snake" title="Snake" aria-label="Snake">🐍</a><a href="/bigtwo" title="Big-D" aria-label="Big-D" aria-current="page">♦</a>
     </nav>
     <div class="logo"><small>ARCADE CARD ROOM</small><strong>BIG<span>-D</span></strong></div>
     <div id="onlineCount" role="status" aria-live="polite">0 PLAYERS ONLINE</div>
@@ -22,6 +23,7 @@
     <section class="hand-panel" aria-label="Your hand"><div class="hand-head"><strong id="handCount">0 CARDS</strong><span id="hint">Select cards to play</span></div><div id="hand"></div><div class="actions"><button id="pass">PASS</button><button id="play">PLAY SELECTED →</button></div></section>
     <details><summary>HOW TO PLAY</summary><p>Lowest card opens. Play the same number of cards at a higher rank, or pass. Valid plays are singles, pairs, triples, straights, flushes, full houses, four of a kind, and straight flushes. Five-card hands rank in that order. Suits rank ♦ ♣ ♥ ♠ and 2 is highest. Empty your hand first: gain one point per card opponents hold while each opponent loses their remaining-card count.</p></details>
   </main>
+  <script src="/platform.js"></script>
   <script src="/bigtwo.js"></script>
 </body>
 </html>

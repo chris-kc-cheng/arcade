@@ -9,3 +9,4 @@
 - Validate all client messages at the server boundary and never trust client-owned scores, health, positions, or roles.
 - Add or update automated tests for shared protocol validation and run `npm test` before committing.
 - Whenever a new mini-game is added, generate an up-to-date screenshot of it, keep the screenshot in the repository, and add a visual showcase for the game to `README.md` in the same change.
+- Every mini-game must show the number of active players. The count must reveal a keyboard-accessible hover/focus list with each player's name, IP address, current room, and connected duration.
