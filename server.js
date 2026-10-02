@@ -15,6 +15,7 @@ const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
 const colors = ['#ff6b6b', '#5c7cfa', '#20c997', '#f59f00', '#cc5de8', '#12b886'];
 const users = new Map();
+const platformProfiles = new Map();
 const history = [];
 const chatHistory = [];
 let nextUserNumber = 1;
@@ -77,7 +78,12 @@ const server = http.createServer((req, res) => {
     req.on('close', () => reloadClients.delete(res));
     return;
   }
-  const requested = spaPaths.has(pathname) ? 'index.html' : pathname.slice(1);
+  const legacyPath = legacyPaths.get(pathname);
+  if (legacyPath) {
+    res.writeHead(308, { Location: legacyPath }).end();
+    return;
+  }
+  const requested = routeFiles.get(pathname) || pathname.slice(1);
   const file = path.resolve(publicDir, requested);
 
   if (!file.startsWith(`${publicDir}${path.sep}`)) {
@@ -118,12 +124,68 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank.html', '/penalty.html', '/fighter.html', '/snake.html', '/bigtwo.html']);
-const spaPaths = new Set(['/', '/tank.html', '/penalty.html']);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html']]);
+const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo']]);
 let currentGamePath = '/';
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
 }
+
+function requestIp(request) {
+  const forwarded = request.headers['x-forwarded-for'];
+  return String(Array.isArray(forwarded) ? forwarded[0] : forwarded || request.socket.remoteAddress || 'unknown').split(',')[0].trim();
+}
+
+function nextAvailableUserName() {
+  const used = new Set([...platformProfiles.values()].map(profile => profile.name));
+  let number = 1;
+  while (used.has(`User ${number}`)) number++;
+  return `User ${number}`;
+}
+
+function platformPresence() {
+  return [...platformProfiles.values()].filter(profile => profile.sockets.size).map(({ key, name, ip, connectedAt, room }) => ({ id: key, name, ip, connectedAt, room }));
+}
+
+function broadcastPlatformPresence() {
+  broadcast({ type: 'platformPresence', players: platformPresence() });
+}
+
+function registerPlatformSocket(socket, request, key, room) {
+  let profile = platformProfiles.get(key);
+  if (!profile) {
+    profile = { key, name: nextAvailableUserName(), customName: false, ip: requestIp(request), connectedAt: Date.now(), room, sockets: new Set(), removeTimer: null };
+    platformProfiles.set(key, profile);
+  }
+  clearTimeout(profile.removeTimer);
+  profile.removeTimer = null;
+  profile.room = room;
+  profile.sockets.add(socket);
+  socket.platformProfile = profile;
+  socket.on('message', raw => {
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (message.type !== 'setName' || profile.customName) return;
+    const name = cleanName(message.name);
+    if (!name) return;
+    profile.name = name;
+    profile.customName = true;
+    broadcastPlatformPresence();
+  });
+  socket.on('close', () => {
+    profile.sockets.delete(socket);
+    broadcastPlatformPresence();
+    if (!profile.sockets.size) {
+      profile.removeTimer = setTimeout(() => platformProfiles.delete(key), DISCONNECT_GRACE_MS);
+      profile.removeTimer.unref?.();
+    }
+  });
+  queueMicrotask(broadcastPlatformPresence);
+  return profile;
+}
+
+function profileName(socket) { return socket.platformProfile?.name; }
 function resetTankState() {
   bullets.length = 0;
   for (const player of tankPlayers.values()) {
@@ -245,7 +307,7 @@ function addTank(socket, requestedKey) {
   }
   const number = nextTankNumber++;
   const spawn = randomSpawn();
-  const player = { socket, key, id: `tank-${number}`, name: `TANK ${String(number).padStart(2, '0')}`, color: tankColors[(number - 1) % tankColors.length], score: 0, alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2, turret: 0, ...spawn, input: { forward: 0, turn: 0, aimX: 0 }, lastFire: 0 };
+  const player = { socket, key, id: `tank-${number}`, name: profileName(socket) || `TANK ${String(number).padStart(2, '0')}`, color: tankColors[(number - 1) % tankColors.length], score: 0, alive: true, respawnAt: 0, heading: Math.random() * Math.PI * 2, turret: 0, ...spawn, input: { forward: 0, turn: 0, aimX: 0 }, lastFire: 0 };
   player.turret = player.heading;
   tankPlayers.set(key, player);
   socket.isAlive = true;
@@ -263,8 +325,8 @@ function attachTankMessages(socket, player, key) {
     if (message.type === 'tankReset') {
       resetTankState();
     } else if (message.type === 'setName') {
-      const name = cleanName(message.name);
-      if (name) { player.name = name; tankBroadcast(tankSnapshot()); }
+      const name = profileName(socket);
+      if (name && player.name !== name) { player.name = name; tankBroadcast(tankSnapshot()); }
     } else if (message.type === 'tankInput') {
       player.input.forward = Math.max(-1, Math.min(1, Number(message.forward) || 0));
       player.input.turn = Math.max(-1, Math.min(1, Number(message.turn) || 0));
@@ -354,7 +416,7 @@ function addPenalty(socket, requestedKey) {
   } else {
     const number = nextPenaltyNumber++;
     const role = penaltyPlayers.length < 2 && penaltyGame.phase === 'waiting' ? 'player' : 'spectator';
-    client = { key, socket, id: `penalty-${number}`, name: `User ${number}`, role, color: role === 'player' ? penaltyColors[penaltyPlayers.length] : '#8c918b' };
+    client = { key, socket, id: `penalty-${number}`, name: profileName(socket) || `User ${number}`, role, color: role === 'player' ? penaltyColors[penaltyPlayers.length] : '#8c918b' };
     penaltyClients.set(key, client);
     if (role === 'player') penaltyPlayers.push(key);
   }
@@ -366,8 +428,8 @@ function addPenalty(socket, requestedKey) {
     try { message = JSON.parse(raw.toString()); } catch { return; }
     const index = penaltyPlayers.indexOf(key);
     if (message.type === 'setName') {
-      const name = cleanName(message.name);
-      if (name) { client.name = name; penaltyBroadcast(); }
+      const name = profileName(socket);
+      if (name && client.name !== name) { client.name = name; penaltyBroadcast(); }
       return;
     }
     if (message.type === 'penaltyReset' && client.role === 'player') {
@@ -446,7 +508,7 @@ function fighterBroadcast(message = fighterSnapshot()) {
 function addFighter(socket) {
   const number = nextFighterNumber++;
   const id = `fighter-${number}`;
-  const player = { socket, id, name: `Player ${number}`, color: number % 2 ? '#f4f0e6' : '#d9483b', role: 'spectator', x: 28, y: 0, vx: 0, vy: 0, facing: 1, energy: 100, attack: '', attackUntil: 0, hitUntil: 0, combo: '', input: cleanFighterInput({}), attackHeld: false, cpuEnergy: 100 };
+  const player = { socket, id, name: profileName(socket) || `Player ${number}`, color: number % 2 ? '#f4f0e6' : '#d9483b', role: 'spectator', x: 28, y: 0, vx: 0, vy: 0, facing: 1, energy: 100, attack: '', attackUntil: 0, hitUntil: 0, combo: '', input: cleanFighterInput({}), attackHeld: false, cpuEnergy: 100 };
   fighters.set(id, player); fighterOrder.push(id);
   if (fighterOrder.length <= 2) resetFighterRound(fighterOrder.length === 2 ? 'A NEW CHALLENGER!' : 'CPU CHALLENGER'); else fighterRoles();
   socket.isAlive = true;
@@ -457,7 +519,7 @@ function addFighter(socket) {
     let message; try { message = JSON.parse(raw.toString()); } catch { return; }
     if (message.type === 'fighterInput') player.input = cleanFighterInput(message);
     if (message.type === 'fighterCombo' && ['hadoken', 'shoryuken', 'tatsumaki'].includes(message.combo) && player.role !== 'spectator') player.pendingCombo = message.combo;
-    if (message.type === 'setName') { const name = cleanName(message.name); if (name) { player.name = name; fighterBroadcast(); } }
+    if (message.type === 'setName') { const name = profileName(socket); if (name && player.name !== name) { player.name = name; fighterBroadcast(); } }
     if (message.type === 'fighterReset' && player.role !== 'spectator') { fighterRound++; resetFighterRound(`${player.name} RESET THE ROUND`); fighterBroadcast(); }
   });
   socket.on('close', () => {
@@ -507,9 +569,9 @@ function scheduleBigTwoCpu() {
  },550);
 }
 function addBigTwo(socket){
- const id=`big-${nextBigTwoNumber++}`,p={socket,id,name:`PLAYER ${String(nextBigTwoNumber-1).padStart(2,'0')}`,hand:[],score:0};bigTwoPlayers.set(id,p);bigTwoOrder.push(id);socket.isAlive=true;socket.on('pong',()=>socket.isAlive=true);
+ const id=`big-${nextBigTwoNumber++}`,p={socket,id,name:profileName(socket)||`PLAYER ${String(nextBigTwoNumber-1).padStart(2,'0')}`,hand:[],score:0};bigTwoPlayers.set(id,p);bigTwoOrder.push(id);socket.isAlive=true;socket.on('pong',()=>socket.isAlive=true);
  if(bigTwoOrder.length<=4)startBigTwo(`${p.name} joined — new deal`);else broadcastBigTwo();
- socket.on('message',raw=>{let m;try{m=cleanBigTwoAction(JSON.parse(raw.toString()));}catch{return}if(!m||!bigTwoActive().includes(p))return;if(m.type==='reset'){startBigTwo(`${p.name} reset the table`);return}if(bigTwoGame.status!=='playing'||bigTwoGame.turn!==id)return;
+ socket.on('message',raw=>{let source;try{source=JSON.parse(raw.toString())}catch{return}if(source.type==='setName'){const name=profileName(socket);if(name&&p.name!==name){p.name=name;broadcastBigTwo()}return}const m=cleanBigTwoAction(source);if(!m||!bigTwoActive().includes(p))return;if(m.type==='reset'){startBigTwo(`${p.name} reset the table`);return}if(bigTwoGame.status!=='playing'||bigTwoGame.turn!==id)return;
   if(m.type==='pass'){passBigTwo(p);return}
   if(!m.cards.every(c=>p.hand.includes(c))||!beats(m.cards,bigTwoGame.trick))return;if(!bigTwoGame.trick&&bigTwoActive().every(x=>x.hand.length===13)&&!m.cards.includes(bigTwoGame.openingCard))return;
   finishBigTwoPlay(p,m.cards);
@@ -569,7 +631,7 @@ function addSnake(socket) {
   const number = nextSnakeNumber++;
   const player = {
     id: `snake-${number}`,
-    name: `PLAYER ${number}`,
+    name: profileName(socket) || `PLAYER ${number}`,
     color: snakeColors[(number - 1) % snakeColors.length],
     socket,
     body: [],
@@ -588,6 +650,7 @@ function addSnake(socket) {
   socket.on('message', data => {
     let raw;
     try { raw = JSON.parse(data.toString()); } catch { return; }
+    if (raw.type === 'setName') { const name = profileName(socket); if (name && player.name !== name) { player.name = name; broadcastSnakeState(); } return; }
     const action = cleanSnakeAction(raw);
     if (!action) return;
     if (action.type === 'snakeInput') {
@@ -654,8 +717,9 @@ wss.on('connection', (socket, request) => {
   attachPlatformMessages(socket);
   socket.send(JSON.stringify({ type: 'switchGame', path: currentGamePath }));
   const url = new URL(request.url, 'http://localhost');
-  const room = url.searchParams.get('room');
+  const room = url.searchParams.get('room') || 'doodle';
   let key = clientKey(request);
+  registerPlatformSocket(socket, request, key, room);
   if (room === 'tanks') {
     addTank(socket, key);
     return;
@@ -684,7 +748,7 @@ wss.on('connection', (socket, request) => {
     socket,
     key,
     id: `user-${number}`,
-    name: `User ${number}`,
+    name: profileName(socket) || `User ${number}`,
     color: colors[(number - 1) % colors.length],
     tool: 'pen',
     drawing: false
@@ -714,8 +778,8 @@ function attachDoodleMessages(socket, user, key) {
       if (history.length > 50000) history.splice(0, 10000);
       broadcast(stroke, socket);
     } else if (message.type === 'setName') {
-      const name = cleanName(message.name);
-      if (name) { user.name = name; broadcast({ type: 'presence', users: publicUsers() }); }
+      const name = profileName(socket);
+      if (name && user.name !== name) { user.name = name; broadcast({ type: 'presence', users: publicUsers() }); }
     } else if (message.type === 'activity') {
       user.drawing = Boolean(message.drawing);
       user.tool = message.tool === 'eraser' ? 'eraser' : 'pen';

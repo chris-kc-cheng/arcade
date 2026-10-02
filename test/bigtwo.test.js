@@ -20,14 +20,14 @@ test('Big-D navigation sends shared switches and follows server switches', () =>
   }
   vm.runInNewContext(fs.readFileSync(require.resolve('../public/bigtwo.js'), 'utf8'), {
     document: { querySelector: element, querySelectorAll: () => [link], createElement: () => ({}) },
-    location: { protocol: 'http:', host: 'localhost', pathname: '/bigtwo.html', assign: path => navigated.push(path) },
+    location: { protocol: 'http:', host: 'localhost', pathname: '/bigtwo', assign: path => navigated.push(path) },
     WebSocket: FakeSocket, confirm: () => true
   });
   let prevented = false;
   click({ preventDefault() { prevented = true; } });
   assert.equal(prevented, true);
   assert.deepEqual(sent, [{ type: 'switchGame', path: '/' }]);
-  socket.onmessage({ data: JSON.stringify({ type: 'switchGame', path: '/bigtwo.html' }) });
+  socket.onmessage({ data: JSON.stringify({ type: 'switchGame', path: '/bigtwo' }) });
   assert.deepEqual(navigated, []);
   socket.onmessage({ data: JSON.stringify({ type: 'switchGame', path: '/' }) });
   assert.deepEqual(navigated, ['/']);
@@ -75,8 +75,8 @@ test('Big-D counts connected humans including spectators and synchronizes exits'
   await waitFor(() => messages[0].some(m => m.onlineCount === 4));
   assert.equal(messages[0].findLast(m => m.type === 'bigTwoState').round, spectator.round);
   clients[0].send(JSON.stringify({ type: 'switchGame', path: '/invalid.html' }));
-  clients[0].send(JSON.stringify({ type: 'switchGame', path: '/tank.html' }));
-  await waitFor(() => messages.slice(0, 4).every(items => items.some(m => m.type === 'switchGame' && m.path === '/tank.html')));
+  clients[0].send(JSON.stringify({ type: 'switchGame', path: '/tank' }));
+  await waitFor(() => messages.slice(0, 4).every(items => items.some(m => m.type === 'switchGame' && m.path === '/tank')));
   assert.ok(messages.every(items => !items.some(m => m.path === '/invalid.html')));
   assert.ok(messages.every(items => !items.some(m => m.onlineCount === 999)));
 });

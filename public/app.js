@@ -1,3 +1,4 @@
+function sessionClient(){if(typeof sessionStorage==='undefined')return'test-client';let id=sessionStorage.getItem('arcade-client');if(!id){id=crypto.randomUUID();sessionStorage.setItem('arcade-client',id)}return id}
 const canvas = document.querySelector('#game');
 const ctx = canvas.getContext('2d');
 const scoreNode = document.querySelector('#score');
@@ -137,9 +138,11 @@ soundButton.addEventListener('click', () => {
 
 function connectPlatform() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  platformSocket = new WebSocket(`${protocol}://${location.host}?room=snake`);
+  platformSocket = new WebSocket(`${protocol}://${location.host}?room=snake&client=${encodeURIComponent(sessionClient())}`);
+  platformSocket.onopen = () => { const name = sessionStorage.getItem('arcade-name'); if (name) send({ type: 'setName', name }); };
   platformSocket.onmessage = event => {
     const message = JSON.parse(event.data);
+    if (message.type === 'platformPresence') { renderArcadePresence(message.players); return; }
     if (message.type === 'switchGame' && message.path !== location.pathname) location.assign(message.path);
     if (message.type === 'snakeWelcome') selfId = message.selfId;
     if (message.type === 'snakeState') {
