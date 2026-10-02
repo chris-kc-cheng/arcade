@@ -40,3 +40,12 @@ test('Hostinger release includes the built browser bundle', () => {
   assert.ok(buildStep < packageStep);
   assert.doesNotMatch(workflow, /--exclude=['"]public\/react-app\.js['"]/);
 });
+
+test('Hostinger current symlink exposes the built public directory', () => {
+  const deployScript = read('deploy/hostinger-deploy.sh');
+
+  assert.match(
+    deployScript,
+    /ln -sfn "\$release_path\/public" "\$\{deploy_path\}\/current"/,
+  );
+});

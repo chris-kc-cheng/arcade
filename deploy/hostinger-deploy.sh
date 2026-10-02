@@ -42,7 +42,7 @@ container_id=$(CADDY_NETWORK="$caddy_network" docker compose \
 for _ in {1..30}; do
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")
   if [[ "$health" == healthy ]]; then
-    ln -sfn "$release_path" "${deploy_path}/current"
+    ln -sfn "$release_path/public" "${deploy_path}/current"
     find "${deploy_path}/releases" -mindepth 1 -maxdepth 1 -type d ! -path "$release_path" -printf '%T@ %p\n' \
       | sort -nr | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
     echo "Deployed Arcade revision $revision."
