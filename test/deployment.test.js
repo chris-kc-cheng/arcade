@@ -6,6 +6,16 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('default compose command starts a localhost development server', () => {
+  const local = read('compose.override.yaml');
+
+  assert.match(local, /target: development/);
+  assert.match(local, /command: npm run dev/);
+  assert.match(local, /127\.0\.0\.1:3000:3000/);
+  assert.match(local, /\.\:\/app/);
+  assert.match(local, /arcade_node_modules:\/app\/node_modules/);
+});
+
 test('production compose keeps Arcade private and attached to Caddy', () => {
   const base = read('compose.yaml');
   const production = read('compose.prod.yaml');

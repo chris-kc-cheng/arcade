@@ -50,18 +50,20 @@ Browser -- HTTPS/WSS --> Caddy -- HTTP/WS --> arcade:3000
 
 Because game state is currently held in memory, restarting the Node container resets the active boards and games. Run only one Arcade server instance unless a shared state and pub/sub service such as Redis is added.
 
-### Local Docker development
+### Run with Docker Compose
 
-The base Compose file is combined with the local override, which publishes port 3000, mounts the source tree, and runs the frontend/server watchers:
+The default Compose configuration builds the development image, publishes the app only on localhost, mounts the source tree, and runs the frontend/server watchers:
 
 ```bash
-docker compose -f compose.yaml -f compose.local.yaml up --build
+docker compose up --build
 ```
+
+Open <http://localhost:3000>. Compose automatically combines `compose.yaml` with `compose.override.yaml`, so edits made on the host are rebuilt or reloaded without rebuilding the image. The named volume keeps the container's Linux dependencies separate from host dependencies.
 
 Stop it with:
 
 ```bash
-docker compose -f compose.yaml -f compose.local.yaml down
+docker compose down
 ```
 
 ## Deploy on Hostinger with Docker and Caddy
