@@ -32,3 +32,19 @@ test('Big Two combinations rank 2 high and five-card categories',()=>{
  assert.equal(beats(['2D'],{cards:['AS']}),true);
  assert.equal(beats(['3D','3C','3H','4D','4C'],{cards:['3S','5S','7S','9S','JS']}),true);
 });
+
+const { cleanTypingAction } = require('../lib/protocol');
+const { paragraphs, typingStats } = require('../lib/typing');
+test('typing messages validate input, difficulty, and reset actions', () => {
+  assert.deepEqual(cleanTypingAction({ type: 'input', value: 'hello', backspace: true }), { type: 'input', value: 'hello', backspace: true });
+  assert.deepEqual(cleanTypingAction({ type: 'difficulty', difficulty: 'hard' }), { type: 'difficulty', difficulty: 'hard' });
+  assert.equal(cleanTypingAction({ type: 'difficulty', difficulty: 'impossible' }), null);
+  assert.equal(cleanTypingAction({ type: 'input', value: 'x'.repeat(901) }), null);
+  assert.equal(cleanTypingAction({ type: 'finish', score: 9999 }), null);
+});
+test('typing statistics are derived from server-owned race data', () => {
+  const player = { startedAt: 1000, finishedAt: 61000, keystrokes: 120, correctKeystrokes: 114, backspaces: 4 };
+  const stats = typingStats(player, 'one two three four five', 99999);
+  assert.deepEqual(stats, { timeMs: 60000, accuracy: 95, backspaces: 4, cpm: 23, wps: 0.08, score: 9 });
+  assert.ok(Object.values(paragraphs).every(text => text.length > 80 && text.length < 900));
+});

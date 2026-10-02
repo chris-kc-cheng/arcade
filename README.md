@@ -12,7 +12,12 @@
 | <img src="public/screenshots/fighter.png" alt="Line Fighter gameplay" width="320" height="180"> | <img src="public/screenshots/snake.png" alt="Snake gameplay" width="320" height="180"> | <img src="public/screenshots/bigtwo.png" alt="Big-D gameplay" width="320" height="180"> |
 | Fight a CPU or another player with stick-figure special moves. | Share one real-time Snake grid with every connected player. | Play a shared Big Two card game for one to four players. |
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake. Game state and presence live only in the Node.js process and reset whenever it restarts.
+| Type/Off |
+| --- |
+| <img src="public/screenshots/typing.svg" alt="Type/Off two-player typing race" width="640" height="360"> |
+| Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. |
+
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, and a two-player typing race. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
