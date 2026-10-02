@@ -1,0 +1,89 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-production
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_PATH: ${{ secrets.HOSTINGER_DEPLOY_PATH }}
+      SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+      CADDY_NETWORK: ${{ secrets.CADDY_NETWORK }}
+    steps:
+      - name: Check out the selected revision
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run automated tests
+        run: npm test
+
+      - name: Build browser bundle
+        run: npm run build
+
+      - name: Validate production image
+        run: docker build --target production -t arcade:${GITHUB_SHA} .
+
+      - name: Configure SSH
+        env:
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          HOSTINGER_KNOWN_HOSTS: ${{ secrets.HOSTINGER_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          test -n "$HOSTINGER_SSH_KEY"
+          test -n "$HOSTINGER_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$HOSTINGER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTINGER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package application
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=node_modules \
+            --exclude='public/react-app.js' \
+            -czf "/tmp/arcade-${GITHUB_SHA}.tar.gz" .
+
+      - name: Upload release
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          set -eu
+          SSH_PORT="${SSH_PORT:-22}"
+          scp -P "$SSH_PORT" "/tmp/arcade-${GITHUB_SHA}.tar.gz" \
+            "$HOSTINGER_USER@$HOSTINGER_HOST:/tmp/arcade-${GITHUB_SHA}.tar.gz"
+
+      - name: Activate release
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          set -eu
+          SSH_PORT="${SSH_PORT:-22}"
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/arcade}"
+          CADDY_NETWORK="${CADDY_NETWORK:-caddy}"
+          ssh -p "$SSH_PORT" "$HOSTINGER_USER@$HOSTINGER_HOST" \
+            bash -s -- "$DEPLOY_PATH" "$GITHUB_SHA" "$CADDY_NETWORK" \
+            < deploy/hostinger-deploy.sh
