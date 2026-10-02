@@ -29,3 +29,23 @@ test('Hostinger workflow tests before invoking the deployment script', () => {
   assert.match(workflow, /^name: Deploy production to Hostinger$/m);
   assert.match(workflow, /^    environment: production$/m);
 });
+
+test('Hostinger release includes the built browser bundle', () => {
+  const workflow = read('.github/workflows/deploy-hostinger.yml');
+  const buildStep = workflow.indexOf('run: npm run build');
+  const packageStep = workflow.indexOf('name: Package application');
+
+  assert.notEqual(buildStep, -1);
+  assert.notEqual(packageStep, -1);
+  assert.ok(buildStep < packageStep);
+  assert.doesNotMatch(workflow, /--exclude=['"]public\/react-app\.js['"]/);
+});
+
+test('Hostinger current symlink exposes the built public directory', () => {
+  const deployScript = read('deploy/hostinger-deploy.sh');
+
+  assert.match(
+    deployScript,
+    /ln -sfn "\$release_path\/public" "\$\{deploy_path\}\/current"/,
+  );
+});

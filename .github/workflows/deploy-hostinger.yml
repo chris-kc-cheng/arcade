@@ -64,7 +64,6 @@ jobs:
             --exclude=.git \
             --exclude=.github \
             --exclude=node_modules \
-            --exclude='public/react-app.js' \
             -czf "/tmp/arcade-${GITHUB_SHA}.tar.gz" .
 
       - name: Upload release
