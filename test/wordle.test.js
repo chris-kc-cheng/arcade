@@ -5,18 +5,20 @@ const { words, totalWords, scoreGuess } = require('../lib/wordle');
 
 test('Word game accepts only bounded guesses, lengths, and reset actions', () => {
   assert.deepEqual(cleanWordleAction({ type: 'guess', word: '  Apple ' }), { type: 'guess', word: 'apple' });
+  assert.deepEqual(cleanWordleAction({ type: 'guess', word: ' ox ' }), { type: 'guess', word: 'ox' });
+  assert.deepEqual(cleanWordleAction({ type: 'length', length: 2 }), { type: 'length', length: 2 });
   assert.deepEqual(cleanWordleAction({ type: 'length', length: 8 }), { type: 'length', length: 8 });
   assert.deepEqual(cleanWordleAction({ type: 'reset' }), { type: 'reset' });
-  assert.equal(cleanWordleAction({ type: 'guess', word: 'cat' }), null);
+  assert.equal(cleanWordleAction({ type: 'guess', word: 'a' }), null);
   assert.equal(cleanWordleAction({ type: 'length', length: 9 }), null);
   assert.equal(cleanWordleAction({ type: 'win', score: 999 }), null);
 });
 
-test('word library contains unique English-format words from four to eight letters', () => {
+test('word library contains unique English-format words from two to eight letters', () => {
   assert.ok(totalWords > 1500);
   assert.equal(totalWords, Object.values(words).reduce((sum, list) => sum + list.length, 0));
   for (const [length, list] of Object.entries(words)) {
-    assert.ok(list.length > 250);
+    assert.ok(list.length > (Number(length) < 4 ? 20 : 250));
     assert.equal(new Set(list).size, list.length);
     assert.ok(list.every(word => word.length === Number(length) && /^[a-z]+$/.test(word)));
   }
@@ -45,7 +47,8 @@ test('Word game keeps each solo puzzle authoritative on the server', async t => 
   await new Promise(resolve => client.once('open', resolve));
   await waitFor(() => states.length);
   assert.equal(states[0].answer, undefined);
-  assert.equal(states[0].wordCount, totalWords);
+  assert.equal(states[0].wordCount, undefined);
+  assert.deepEqual(Object.keys(states[0].availableByLength), ['2', '3', '4', '5', '6', '7', '8']);
 
   client.send(JSON.stringify({ type: 'length', length: 4 }));
   await waitFor(() => states.at(-1).length === 4);
@@ -54,6 +57,20 @@ test('Word game keeps each solo puzzle authoritative on the server', async t => 
   assert.equal(states.at(-1).guesses[0].word, 'able');
   assert.equal(states.at(-1).guesses[0].result.length, 4);
   assert.equal('score' in states.at(-1).guesses[0], false);
+
+  client.send(JSON.stringify({ type: 'length', length: 2 }));
+  await waitFor(() => states.at(-1).length === 2);
+  for (let attempt = 0; attempt < 6 && states.at(-1).status === 'playing'; attempt++) {
+    const count = states.length;
+    client.send(JSON.stringify({ type: 'guess', word: 'am' }));
+    await waitFor(() => states.length > count);
+  }
+  assert.notEqual(states.at(-1).status, 'playing');
+  assert.match(states.at(-1).answer, /^[a-z]{2}$/);
+
+  client.send(JSON.stringify({ type: 'reset' }));
+  await waitFor(() => states.at(-1).status === 'playing' && states.at(-1).guesses.length === 0);
+  assert.equal(states.at(-1).answer, undefined);
 });
 
 async function waitFor(predicate, timeout = 2000) {
