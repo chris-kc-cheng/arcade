@@ -38,6 +38,9 @@ const { paragraphs, typingStats } = require('../lib/typing');
 test('typing messages validate input, difficulty, and reset actions', () => {
   assert.deepEqual(cleanTypingAction({ type: 'input', value: 'hello', backspace: true }), { type: 'input', value: 'hello', backspace: true });
   assert.deepEqual(cleanTypingAction({ type: 'difficulty', difficulty: 'hard' }), { type: 'difficulty', difficulty: 'hard' });
+  assert.deepEqual(cleanTypingAction({ type: 'mode', mode: 'solo' }), { type: 'mode', mode: 'solo' });
+  assert.deepEqual(cleanTypingAction({ type: 'mode', mode: 'versus' }), { type: 'mode', mode: 'versus' });
+  assert.equal(cleanTypingAction({ type: 'mode', mode: 'computer' }), null);
   assert.equal(cleanTypingAction({ type: 'difficulty', difficulty: 'impossible' }), null);
   assert.equal(cleanTypingAction({ type: 'input', value: 'x'.repeat(901) }), null);
   assert.equal(cleanTypingAction({ type: 'finish', score: 9999 }), null);
