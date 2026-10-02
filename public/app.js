@@ -170,7 +170,8 @@ function beep(frequency,duration){
 }
 
 function steer(x,y){const snake=snakes[0];if(!snake||!snake.alive)return;if(x!==-snake.direction.x||y!==-snake.direction.y)snake.nextDirection={x,y}}
-document.addEventListener('keydown',event=>{const key=event.key.toLowerCase();if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','enter'].includes(key))event.preventDefault();if(key==='enter'&&!running)start();if(key==='arrowup'||key==='w')steer(0,-1);if(key==='arrowdown'||key==='s')steer(0,1);if(key==='arrowleft'||key==='a')steer(-1,0);if(key==='arrowright'||key==='d')steer(1,0);if(key==='p'&&running){paused=!paused;pauseCard.hidden=!paused}if(key==='r'){reset();start()}});
+function togglePause(){if(!running||gameOver){start();return}paused=!paused;pauseCard.hidden=!paused;beep(paused?180:520,.04)}
+document.addEventListener('keydown',event=>{const key=event.key.toLowerCase();if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','enter','p'].includes(key))event.preventDefault();if(key==='enter'&&!running)start();if(key==='arrowup'||key==='w')steer(0,-1);if(key==='arrowdown'||key==='s')steer(0,1);if(key==='arrowleft'||key==='a')steer(-1,0);if(key==='arrowright'||key==='d')steer(1,0);if(key==='p')togglePause();if(key==='r'){reset();start()}});
 document.querySelector('#startButton').addEventListener('click',start);
 soundButton.addEventListener('click',()=>{sound=!sound;soundButton.setAttribute('aria-pressed',sound);soundButton.innerHTML=`<span>${sound?'♪':'×'}</span> SOUND: ${sound?'ON':'OFF'}`;if(sound)beep(440,.05)});
 reset();highScoreNode.textContent=String(highScore).padStart(4,'0');requestAnimationFrame(loop);

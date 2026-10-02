@@ -103,14 +103,15 @@ Because state is in memory, run one Node.js instance for now. Multiple instances
 | --- | --- | --- |
 | ![Collaborative drawing board gameplay](public/screenshots/board.png) | ![Tank arena gameplay](public/screenshots/tank.png) | ![Penalty shootout gameplay](public/screenshots/penalty.png) |
 
-| Line Fighter | Snake |
-| --- | --- |
-| ![Line Fighter gameplay](public/screenshots/fighter.png) | ![Snake gameplay](public/screenshots/snake.png) |
+| Line Fighter | Snake | Big-D |
+| --- | --- | --- |
+| ![Line Fighter gameplay](public/screenshots/fighter.png) | ![Snake gameplay](public/screenshots/snake.png) | ![Big-D gameplay](public/screenshots/bigtwo.png) |
 
 - **Line Fighter** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
 - **Tank** is available at `/tank.html` with a nine-sector 3D arena, tactical map, and BZFlag-style mouse-box controls.
 - **Penalty Shootout** is available at `/penalty.html` and follows a five-kicks-per-team format before sudden death.
 - **Snake** is available at `/snake.html` as a retro single-player challenge against bot snakes.
+- **Big-D** is available at `/bigtwo.html` for a shared 1–4 player Big Two card game.
 - Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.
 
 ### Big-D
