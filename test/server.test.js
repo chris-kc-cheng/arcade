@@ -34,7 +34,7 @@ test('Big Two combinations rank 2 high and five-card categories',()=>{
 });
 
 const { cleanTypingAction } = require('../lib/protocol');
-const { paragraphs, typingStats } = require('../lib/typing');
+const { paragraphs, randomParagraph, typingStats } = require('../lib/typing');
 test('typing messages validate input, difficulty, and reset actions', () => {
   assert.deepEqual(cleanTypingAction({ type: 'input', value: 'hello', backspace: true }), { type: 'input', value: 'hello', backspace: true });
   assert.deepEqual(cleanTypingAction({ type: 'difficulty', difficulty: 'hard' }), { type: 'difficulty', difficulty: 'hard' });
@@ -49,5 +49,9 @@ test('typing statistics are derived from server-owned race data', () => {
   const player = { startedAt: 1000, finishedAt: 61000, keystrokes: 120, correctKeystrokes: 114, backspaces: 4 };
   const stats = typingStats(player, 'one two three four five', 99999);
   assert.deepEqual(stats, { timeMs: 60000, accuracy: 95, backspaces: 4, cpm: 23, wps: 0.08, score: 9 });
-  assert.ok(Object.values(paragraphs).every(text => text.length > 80 && text.length < 900));
+  assert.ok(Object.values(paragraphs).every(examples => examples.length >= 4));
+  assert.ok(paragraphs.easy.every(text => text.length > 80 && text.length < 160));
+  assert.ok(paragraphs.medium.every(text => text.length > 200 && text.length < 350));
+  assert.ok(paragraphs.hard.every(text => text.length > 600 && text.length <= 900));
+  assert.notEqual(randomParagraph('easy', paragraphs.easy[0]), paragraphs.easy[0]);
 });

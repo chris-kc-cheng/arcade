@@ -29,7 +29,7 @@ test('typing game starts a server-authoritative solo run and keeps later joins s
   const solo = await join('solo-player');
   assert.equal(states[0].at(-1).phase, 'waiting');
   solo.send(JSON.stringify({ type: 'mode', mode: 'solo' }));
-  await waitFor(() => states[0].some(state => state.mode === 'solo' && state.phase === 'countdown'));
+  await waitFor(() => states[0].some(state => state.mode === 'solo' && state.phase === 'ready'));
 
   const visitor = await join('solo-spectator');
   await waitFor(() => states[1].some(state => state.mode === 'solo' && state.role === 'spectator'));
@@ -37,9 +37,27 @@ test('typing game starts a server-authoritative solo run and keeps later joins s
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(states[0].at(-1).mode, 'solo');
 
-  await waitFor(() => states[0].some(state => state.mode === 'solo' && state.phase === 'racing'), 4000);
+  const ready = states[0].at(-1);
+  const firstCharacter = ready.paragraph[0] === 'x' ? 'y' : 'x';
+  solo.send(JSON.stringify({ type: 'input', value: firstCharacter }));
+  await waitFor(() => states[0].some(state => state.mode === 'solo' && state.phase === 'racing'));
   assert.equal(states[0].at(-1).players.length, 1);
   assert.equal(states[0].at(-1).role, 'player');
+
+  for (let length = 2; length <= ready.paragraph.length; length++) {
+    solo.send(JSON.stringify({ type: 'input', value: firstCharacter + ready.paragraph.slice(1, length) }));
+  }
+  await waitFor(() => states[0].some(state => state.phase === 'finished'));
+  const finished = states[0].at(-1);
+  assert.equal(finished.players[0].length, ready.paragraph.length);
+  assert.ok(finished.players[0].stats);
+  assert.ok(finished.players[0].stats.accuracy < 100);
+
+  solo.send(JSON.stringify({ type: 'difficulty', difficulty: 'hard' }));
+  await waitFor(() => states[0].some(state => state.difficulty === 'hard' && state.phase === 'ready'));
+  const harderRun = states[0].at(-1);
+  assert.equal(harderRun.players[0].length, 0);
+  assert.ok(harderRun.paragraph.length > ready.paragraph.length * 4);
 });
 
 async function waitFor(predicate, timeout = 2000) {
