@@ -3,11 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction } = require('./lib/protocol');
 const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
+const { words: wordleWords, totalWords: wordleWordCount, scoreGuess, randomWord } = require('./lib/wordle');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
@@ -60,6 +61,7 @@ const fighterEffects = [];
 const typingPlayers = new Map();
 let typingOrder = [], nextTypingNumber = 1, typingTimer;
 let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
+const wordleGames = new Map();
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -128,9 +130,9 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html']]);
-const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html']]);
+const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle']]);
 let currentGamePath = '/';
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
@@ -782,6 +784,64 @@ const snakeLoop = setInterval(() => {
 }, 115);
 snakeLoop.unref();
 
+function wordleState(game) {
+  return {
+    type: 'wordleState', length: game.length, guesses: game.guesses,
+    status: game.status, message: game.message, wordCount: wordleWordCount,
+    availableByLength: Object.fromEntries(Object.entries(wordleWords).map(([length, list]) => [length, list.length])),
+    answer: game.status === 'playing' ? undefined : game.answer
+  };
+}
+
+function resetWordle(game, length = game.length) {
+  const previous = game.answer;
+  game.length = length;
+  game.answer = randomWord(length, previous);
+  game.guesses = [];
+  game.status = 'playing';
+  game.message = '';
+}
+
+function addWordle(socket, key) {
+  let game = wordleGames.get(key);
+  if (!game) {
+    game = { length: 5, answer: '', guesses: [], status: 'playing', message: '', socket: null, removeTimer: null };
+    resetWordle(game, 5);
+    wordleGames.set(key, game);
+  }
+  clearTimeout(game.removeTimer);
+  game.socket?.close();
+  game.socket = socket;
+  socket.send(JSON.stringify(wordleState(game)));
+  socket.on('message', raw => {
+    if (game.socket !== socket) return;
+    let message;
+    try { message = JSON.parse(raw.toString()); } catch { return; }
+    const action = cleanWordleAction(message);
+    if (!action) return;
+    if (action.type === 'reset') resetWordle(game);
+    if (action.type === 'length') resetWordle(game, action.length);
+    if (action.type === 'guess') {
+      if (game.status !== 'playing' || action.word.length !== game.length) return;
+      if (!wordleWords[game.length].includes(action.word)) {
+        game.message = 'Not in the word list';
+      } else {
+        game.message = '';
+        game.guesses.push({ word: action.word, result: scoreGuess(game.answer, action.word) });
+        if (action.word === game.answer) game.status = 'won';
+        else if (game.guesses.length === 6) game.status = 'lost';
+      }
+    }
+    socket.send(JSON.stringify(wordleState(game)));
+  });
+  socket.on('close', () => {
+    if (game.socket !== socket) return;
+    game.socket = null;
+    game.removeTimer = setTimeout(() => wordleGames.delete(key), DISCONNECT_GRACE_MS);
+    game.removeTimer.unref?.();
+  });
+}
+
 wss.on('connection', (socket, request) => {
   socket.isAlive = true;
   attachPlatformMessages(socket);
@@ -802,6 +862,7 @@ wss.on('connection', (socket, request) => {
   if (room === 'bigtwo') { addBigTwo(socket); return; }
   if (room === 'snake') { addSnake(socket); return; }
   if (room === 'typing') { addTyping(socket, key); return; }
+  if (room === 'wordle') { addWordle(socket, key); return; }
   key = uniqueClientKey(users, key);
   const returning = users.get(key);
   if (returning) {
