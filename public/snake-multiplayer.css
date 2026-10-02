@@ -1,0 +1,10 @@
+#resetButton {
+  margin-top: auto;
+  margin-bottom: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--acid);
+  background: transparent;
+  color: var(--acid);
+  font-weight: 700;
+  cursor: pointer;
+}

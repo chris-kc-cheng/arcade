@@ -10,7 +10,7 @@
 | Line Fighter | Snake | Big-D |
 | --- | --- | --- |
 | <img src="public/screenshots/fighter.png" alt="Line Fighter gameplay" width="320" height="180"> | <img src="public/screenshots/snake.png" alt="Snake gameplay" width="320" height="180"> | <img src="public/screenshots/bigtwo.png" alt="Big-D gameplay" width="320" height="180"> |
-| Fight a CPU or another player with stick-figure special moves. | Navigate a retro snake challenge against bot snakes. | Play a shared Big Two card game for one to four players. |
+| Fight a CPU or another player with stick-figure special moves. | Share one real-time Snake grid with every connected player. | Play a shared Big Two card game for one to four players. |
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake. Game state and presence live only in the Node.js process and reset whenever it restarts.
 

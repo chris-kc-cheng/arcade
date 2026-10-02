@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const { cleanPoint, cleanFighterInput, cleanBigTwoAction } = require('./lib/protocol');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
+const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 
 const PORT = Number(process.env.PORT) || 3000;
 const developmentMode = process.argv.includes('--dev');
@@ -56,6 +57,10 @@ const bigTwoCpus = Array.from({ length: 3 }, (_, index) => ({ id: `cpu-${index +
 let bigTwoCpuTimer;
 const snakeClients = new Map();
 let nextSnakeNumber = 1;
+let snakeFood = { x: 18, y: 12 };
+let snakeRunning = false;
+let snakePaused = false;
+const snakeColors = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff70b7'];
 const fighterEffects = [];
 
 const contentTypes = {
@@ -511,18 +516,137 @@ function addBigTwo(socket){
  socket.on('close',()=>{const active=bigTwoOrder.indexOf(id)<4;bigTwoPlayers.delete(id);bigTwoOrder=bigTwoOrder.filter(x=>x!==id);if(active)startBigTwo(`${p.name} left — new deal`);else broadcastBigTwo()});
 }
 
-function broadcastSnakePresence() {
-  const message = JSON.stringify({ type: 'snakePresence', count: snakeClients.size });
-  for (const client of snakeClients.values()) if (client.socket.readyState === WebSocket.OPEN) client.socket.send(message);
+function snakeOpenCell() {
+  const occupied = new Set(
+    [...snakeClients.values()].flatMap(player => player.body).map(({ x, y }) => `${x},${y}`)
+  );
+  const spaces = [];
+  for (let y = 1; y < SNAKE_ROWS - 1; y++) {
+    for (let x = 1; x < SNAKE_COLS - 1; x++) if (!occupied.has(`${x},${y}`)) spaces.push({ x, y });
+  }
+  return spaces[Math.floor(Math.random() * spaces.length)] || { x: 18, y: 12 };
 }
+
+function resetSnakePlayer(player) {
+  const start = chooseSnakeSpawn([...snakeClients.values()].filter(other => other.id !== player.id));
+  player.body = start ? snakeBodyAt(start) : [];
+  player.direction = start ? { x: start.dx, y: start.dy } : { x: 1, y: 0 };
+  player.nextDirection = { ...player.direction };
+  player.score = 0;
+  player.alive = Boolean(start);
+}
+
+function resetSnakeGame(running = true) {
+  for (const player of snakeClients.values()) player.body = [];
+  for (const player of snakeClients.values()) resetSnakePlayer(player);
+  snakeFood = snakeOpenCell();
+  snakeRunning = running;
+  snakePaused = false;
+  broadcastSnakeState();
+}
+
+function snakeSnapshot() {
+  return {
+    type: 'snakeState',
+    running: snakeRunning,
+    paused: snakePaused,
+    food: snakeFood,
+    players: [...snakeClients.values()].map(({ id, name, color, body, direction, score, alive }) => ({
+      id, name, color, body, direction, score, alive,
+    })),
+  };
+}
+
+function broadcastSnakeState() {
+  const message = JSON.stringify(snakeSnapshot());
+  for (const client of snakeClients.values()) {
+    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(message);
+  }
+}
+
 function addSnake(socket) {
-  const id = `snake-${nextSnakeNumber++}`;
-  snakeClients.set(id, { id, socket });
+  const number = nextSnakeNumber++;
+  const player = {
+    id: `snake-${number}`,
+    name: `PLAYER ${number}`,
+    color: snakeColors[(number - 1) % snakeColors.length],
+    socket,
+    body: [],
+    direction: { x: 1, y: 0 },
+    nextDirection: { x: 1, y: 0 },
+    score: 0,
+    alive: false,
+  };
+  snakeClients.set(player.id, player);
+  resetSnakePlayer(player);
+  snakeFood = snakeOpenCell();
   socket.isAlive = true;
   socket.on('pong', () => { socket.isAlive = true; });
-  broadcastSnakePresence();
-  socket.on('close', () => { snakeClients.delete(id); broadcastSnakePresence(); });
+  socket.send(JSON.stringify({ type: 'snakeWelcome', selfId: player.id }));
+  broadcastSnakeState();
+  socket.on('message', data => {
+    let raw;
+    try { raw = JSON.parse(data.toString()); } catch { return; }
+    const action = cleanSnakeAction(raw);
+    if (!action) return;
+    if (action.type === 'snakeInput') {
+      if (!player.alive) return;
+      if (action.x !== -player.direction.x || action.y !== -player.direction.y) {
+        player.nextDirection = { x: action.x, y: action.y };
+      }
+    } else if (action.type === 'snakeTogglePause' && snakeRunning) {
+      snakePaused = !snakePaused;
+      broadcastSnakeState();
+    } else if (action.type === 'snakeStart' || action.type === 'snakeReset') {
+      resetSnakeGame(true);
+    }
+  });
+  socket.on('close', () => {
+    snakeClients.delete(player.id);
+    if (snakeClients.size === 0) {
+      snakeRunning = false;
+      snakePaused = false;
+    }
+    broadcastSnakeState();
+  });
 }
+
+const snakeLoop = setInterval(() => {
+  if (!snakeRunning || snakePaused) return;
+  const active = [...snakeClients.values()].filter(player => player.alive && player.body.length);
+  if (!active.length) {
+    snakeRunning = false;
+    broadcastSnakeState();
+    return;
+  }
+  const nextHeads = new Map(active.map(player => [player.id, {
+    x: player.body[0].x + player.nextDirection.x,
+    y: player.body[0].y + player.nextDirection.y,
+  }]));
+  for (const player of active) {
+    const next = nextHeads.get(player.id);
+    const wall = next.x < 1 || next.x >= SNAKE_COLS - 1 || next.y < 1 || next.y >= SNAKE_ROWS - 1;
+    const bodyHit = active.some(other => other.body.some((part, index) =>
+      !(other.id === player.id && index === other.body.length - 1)
+      && part.x === next.x && part.y === next.y
+    ));
+    const headHit = active.some(other => other.id !== player.id && nextHeads.get(other.id).x === next.x && nextHeads.get(other.id).y === next.y);
+    if (wall || bodyHit || headHit) {
+      player.alive = false;
+      continue;
+    }
+    player.direction = player.nextDirection;
+    player.body.unshift(next);
+    if (next.x === snakeFood.x && next.y === snakeFood.y) {
+      player.score += 1;
+      snakeFood = snakeOpenCell();
+    } else {
+      player.body.pop();
+    }
+  }
+  broadcastSnakeState();
+}, 115);
+snakeLoop.unref();
 
 wss.on('connection', (socket, request) => {
   socket.isAlive = true;
@@ -751,7 +875,7 @@ const heartbeat = setInterval(() => {
 }, 30000);
 heartbeat.unref();
 
-wss.on('close', () => { clearInterval(heartbeat); clearInterval(gameLoop); clearInterval(fighterLoop); });
+wss.on('close', () => { clearInterval(heartbeat); clearInterval(gameLoop); clearInterval(fighterLoop); clearInterval(snakeLoop); });
 
 if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Doodle Together is live on http://localhost:${PORT}`));
