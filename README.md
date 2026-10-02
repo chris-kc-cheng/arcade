@@ -1,6 +1,6 @@
 # Doodle Together
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake Party. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, and Snake. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
@@ -97,10 +97,20 @@ Because state is in memory, run one Node.js instance for now. Multiple instances
 
 ## Arcade games
 
-- **Line Fighter II** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
+## Gameplay showcase
+
+| Drawing Board | Tank | Penalty Shootout |
+| --- | --- | --- |
+| ![Collaborative drawing board gameplay](public/screenshots/board.png) | ![Tank arena gameplay](public/screenshots/tank.png) | ![Penalty shootout gameplay](public/screenshots/penalty.png) |
+
+| Line Fighter | Snake |
+| --- | --- |
+| ![Line Fighter gameplay](public/screenshots/fighter.png) | ![Snake gameplay](public/screenshots/snake.png) |
+
+- **Line Fighter** is available at `/fighter.html`. Move with **WASD**, punch with **J**, and kick with **K**. A solo visitor fights the computer; a second visitor immediately replaces it. Later visitors spectate and rotate into the next match in pairs.
 - **Tank** is available at `/tank.html` with a nine-sector 3D arena, tactical map, and BZFlag-style mouse-box controls.
 - **Penalty Shootout** is available at `/penalty.html` and follows a five-kicks-per-team format before sudden death.
-- **Snake Party** is available at `/snake.html` as a retro single-player challenge against bot snakes.
+- **Snake** is available at `/snake.html` as a retro single-player challenge against bot snakes.
 - Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.
 
 ### Big-D

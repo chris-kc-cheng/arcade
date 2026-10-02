@@ -181,5 +181,6 @@ function connectPlatform(){
   platformSocket.onmessage=event=>{const message=JSON.parse(event.data);if(message.type==='switchGame'&&message.path!==location.pathname)location.assign(message.path);};
   platformSocket.onclose=()=>setTimeout(connectPlatform,1200);
 }
+document.querySelector('.screen-title').textContent='SNAKE';
 document.querySelectorAll('.snake-bar nav a').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();if(confirm(`Switch everyone to ${link.title}?`))platformSocket?.send(JSON.stringify({type:'switchGame',path:link.getAttribute('href')}));}));
 connectPlatform();

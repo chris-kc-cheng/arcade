@@ -52,6 +52,7 @@ let fighterNotice = '';
 const bigTwoPlayers = new Map();
 let bigTwoOrder = [], nextBigTwoNumber = 1, bigTwoRound = 0;
 let bigTwoGame = { status: 'waiting', turn: '', trick: null, passes: [], openingCard: '', notice: 'Waiting for players' };
+const fighterEffects = [];
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -413,6 +414,7 @@ function resetFighterRound(notice = '') {
   fighterRoles();
   fighterRoundEndsAt = 0;
   fighterNotice = notice;
+  fighterEffects.length = 0;
   const active = fighterOrder.slice(0, 2);
   active.forEach((id, index) => {
     const player = fighters.get(id);
@@ -423,8 +425,8 @@ function resetFighterRound(notice = '') {
 function fighterSnapshot(now = Date.now()) {
   const active = fighterOrder.slice(0, 2).map(id => fighters.get(id)).filter(Boolean);
   const players = active.map(fighterPublic);
-  if (players.length === 1) players.push({ id: 'cpu', name: 'CPU KEN', role: 'computer', color: '#d9483b', x: 72, y: 0, energy: active[0].cpuEnergy ?? 100, facing: -1, attack: active[0].cpuAttack || '', attackUntil: active[0].cpuAttackUntil || 0, hitUntil: active[0].cpuHitUntil || 0, combo: active[0].cpuCombo || '' });
-  return { type: 'fighterState', selfCount: fighters.size, round: fighterRound, players, queue: fighterOrder.slice(2).map((id, i) => ({ ...fighterPublic(fighters.get(id)), queuePosition: i + 1 })), roundEndsAt: fighterRoundEndsAt, notice: fighterNotice, serverTime: now };
+  if (players.length === 1) players.push({ id: 'cpu', name: 'CPU', role: 'computer', color: '#d9483b', x: 72, y: 0, energy: active[0].cpuEnergy ?? 100, facing: -1, attack: active[0].cpuAttack || '', attackUntil: active[0].cpuAttackUntil || 0, hitUntil: active[0].cpuHitUntil || 0, combo: active[0].cpuCombo || '' });
+  return { type: 'fighterState', selfCount: fighters.size, round: fighterRound, players, effects: fighterEffects, queue: fighterOrder.slice(2).map((id, i) => ({ ...fighterPublic(fighters.get(id)), queuePosition: i + 1 })), roundEndsAt: fighterRoundEndsAt, notice: fighterNotice, serverTime: now };
 }
 
 function fighterBroadcast(message = fighterSnapshot()) {
@@ -435,7 +437,7 @@ function fighterBroadcast(message = fighterSnapshot()) {
 function addFighter(socket) {
   const number = nextFighterNumber++;
   const id = `fighter-${number}`;
-  const player = { socket, id, name: `FIGHTER ${String(number).padStart(2, '0')}`, color: number % 2 ? '#f4f0e6' : '#d9483b', role: 'spectator', x: 28, y: 0, vx: 0, vy: 0, facing: 1, energy: 100, attack: '', attackUntil: 0, hitUntil: 0, combo: '', input: cleanFighterInput({}), attackHeld: false, cpuEnergy: 100 };
+  const player = { socket, id, name: `Player ${number}`, color: number % 2 ? '#f4f0e6' : '#d9483b', role: 'spectator', x: 28, y: 0, vx: 0, vy: 0, facing: 1, energy: 100, attack: '', attackUntil: 0, hitUntil: 0, combo: '', input: cleanFighterInput({}), attackHeld: false, cpuEnergy: 100 };
   fighters.set(id, player); fighterOrder.push(id);
   if (fighterOrder.length <= 2) resetFighterRound(fighterOrder.length === 2 ? 'A NEW CHALLENGER!' : 'CPU CHALLENGER'); else fighterRoles();
   socket.isAlive = true;
@@ -445,6 +447,8 @@ function addFighter(socket) {
   socket.on('message', raw => {
     let message; try { message = JSON.parse(raw.toString()); } catch { return; }
     if (message.type === 'fighterInput') player.input = cleanFighterInput(message);
+    if (message.type === 'fighterCombo' && ['hadoken', 'shoryuken', 'tatsumaki'].includes(message.combo) && player.role !== 'spectator') player.pendingCombo = message.combo;
+    if (message.type === 'setName') { const name = cleanName(message.name); if (name) { player.name = name; fighterBroadcast(); } }
     if (message.type === 'fighterReset' && player.role !== 'spectator') { fighterRound++; resetFighterRound(`${player.name} RESET THE ROUND`); fighterBroadcast(); }
   });
   socket.on('close', () => {
@@ -582,9 +586,31 @@ function attachDoodleMessages(socket, user, key) {
 }
 
 function beginFighterAttack(attacker, type, now) {
-  const data = type === 'punch' ? { duration: 230, reach: 11, damage: 7 } : { duration: 360, reach: 15, damage: 11 };
+  const attacks = {
+    punch: { duration: 230, reach: 11, damage: 7, push: 4 }, kick: { duration: 360, reach: 15, damage: 11, push: 4 },
+    hadoken: { duration: 520, reach: 45, damage: 15, push: 8 }, shoryuken: { duration: 460, reach: 16, damage: 19, push: 7 }, tatsumaki: { duration: 560, reach: 21, damage: 17, push: 8 }
+  };
+  const data = attacks[type] || attacks.punch;
   attacker.attack = type; attacker.attackUntil = now + data.duration; attacker.attackHeld = true;
   return data;
+}
+
+function landFighterAttack(attacker, defender, type, now) {
+  const attack = beginFighterAttack(attacker, type, now);
+  if (type === 'hadoken') {
+    fighterEffects.push({
+      id: `${attacker.id || 'cpu'}-${now}`,
+      x: attacker.x + attacker.facing * 5,
+      y: Math.max(7, attacker.y + 12),
+      vx: attacker.facing * 64,
+      life: 0.68
+    });
+  }
+  if (type === 'shoryuken' && attacker.y === 0) attacker.vy = 46;
+  if (Math.abs(defender.x - attacker.x) <= attack.reach && Math.abs(defender.y - attacker.y) < 18 && now >= defender.hitUntil) {
+    defender.energy = Math.max(0, defender.energy - attack.damage); defender.hitUntil = now + 320; defender.x = Math.max(5, Math.min(95, defender.x + attacker.facing * attack.push));
+    attacker.combo = type.toUpperCase(); attacker.comboUntil = now + 1100;
+  }
 }
 
 function runFighter(attacker, defender, dt, now, computer = false) {
@@ -600,16 +626,11 @@ function runFighter(attacker, defender, dt, now, computer = false) {
   if (input.jump && attacker.y === 0) attacker.vy = 38;
   attacker.vy -= 90 * dt; attacker.y = Math.max(0, attacker.y + attacker.vy * dt); if (attacker.y === 0) attacker.vy = 0;
   attacker.x = Math.max(5, Math.min(95, attacker.x + attacker.vx * dt));
+  if (attacker.pendingCombo && now >= attacker.attackUntil) { const combo = attacker.pendingCombo; attacker.pendingCombo = ''; landFighterAttack(attacker, defender, combo, now); }
   const pressed = input.punch || input.kick;
   if (!pressed) attacker.attackHeld = false;
   if (pressed && !attacker.attackHeld && now >= attacker.attackUntil) {
-    const kind = input.punch ? 'punch' : 'kick';
-    const attack = beginFighterAttack(attacker, kind, now);
-    if (Math.abs(defender.x - attacker.x) <= attack.reach && Math.abs(defender.y - attacker.y) < 14 && now >= defender.hitUntil) {
-      defender.energy = Math.max(0, defender.energy - attack.damage); defender.hitUntil = now + 260; defender.x = Math.max(5, Math.min(95, defender.x + attacker.facing * 4));
-      attacker.combo = kind === 'punch' ? 'HADOUKEN' : (attacker.y > 5 ? 'SHORYUKEN' : 'TATSUMAKI SENPUU KYAKU');
-      attacker.comboUntil = now + 900;
-    }
+    landFighterAttack(attacker, defender, input.punch ? 'punch' : 'kick', now);
   }
   if (now > (attacker.comboUntil || 0)) attacker.combo = '';
 }
@@ -618,6 +639,12 @@ let previousFighterTick = Date.now();
 const fighterLoop = setInterval(() => {
   if (!fighters.size) return;
   const now = Date.now(), dt = Math.min((now - previousFighterTick) / 1000, .05); previousFighterTick = now;
+  for (let index = fighterEffects.length - 1; index >= 0; index--) {
+    const effect = fighterEffects[index];
+    effect.x += effect.vx * dt;
+    effect.life -= dt;
+    if (effect.life <= 0 || effect.x < -8 || effect.x > 108) fighterEffects.splice(index, 1);
+  }
   const active = fighterOrder.slice(0, 2).map(id => fighters.get(id)).filter(Boolean);
   if (!fighterRoundEndsAt && active.length) {
     if (active.length === 1) {
@@ -625,7 +652,7 @@ const fighterLoop = setInterval(() => {
       const cpu = { x: 72, y: 0, vx: 0, vy: 0, facing: -1, energy: human.cpuEnergy ?? 100, attack: human.cpuAttack || '', attackUntil: human.cpuAttackUntil || 0, hitUntil: human.cpuHitUntil || 0, combo: human.cpuCombo || '', comboUntil: human.cpuComboUntil || 0, attackHeld: human.cpuAttackHeld || false };
       runFighter(human, cpu, dt, now); runFighter(cpu, human, dt, now, true);
       Object.assign(human, { cpuEnergy: cpu.energy, cpuAttack: cpu.attack, cpuAttackUntil: cpu.attackUntil, cpuHitUntil: cpu.hitUntil, cpuCombo: cpu.combo, cpuComboUntil: cpu.comboUntil, cpuAttackHeld: cpu.attackHeld });
-      if (human.energy <= 0 || cpu.energy <= 0) { fighterNotice = human.energy > 0 ? `${human.name} WINS` : 'CPU KEN WINS'; fighterRoundEndsAt = now + 3000; }
+      if (human.energy <= 0 || cpu.energy <= 0) { fighterNotice = human.energy > 0 ? `${human.name} WINS` : 'CPU WINS'; fighterRoundEndsAt = now + 3000; }
     } else {
       runFighter(active[0], active[1], dt, now); runFighter(active[1], active[0], dt, now);
       const winner = active.find(player => player.energy > 0);
