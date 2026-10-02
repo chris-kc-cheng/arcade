@@ -14,10 +14,10 @@
 
 | Type/Off |
 | --- |
-| <img src="public/screenshots/typing.svg" alt="Type/Off two-player typing race" width="640" height="360"> |
+| <img src="public/screenshots/typing.svg" alt="Type/Off solo and two-player typing challenge" width="640" height="360"> |
 | Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. |
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, and a two-player typing race. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, and a typing challenge with solo and head-to-head modes. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
