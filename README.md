@@ -102,3 +102,9 @@ Because state is in memory, run one Node.js instance for now. Multiple instances
 - **Penalty Shootout** is available at `/penalty.html` and follows a five-kicks-per-team format before sudden death.
 - **Snake Party** is available at `/snake.html` as a retro single-player challenge against bot snakes.
 - Each experience has in-app links to the others, and multiplayer state is synchronized by the Node.js WebSocket server.
+
+### Big-D
+
+**Big-D (Big Two)** is available at `/bigtwo.html` for one to four active players. The server deals and validates every play, restarts the game when an active player joins or leaves, keeps hands private, and uses zero-sum remaining-card scoring.
+
+![Big-D live multiplayer card table](docs/screenshots/big-d.svg)
