@@ -27,14 +27,19 @@ test('poll state is authoritative and creator-only controls are enforced', async
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   const lobby = new WebSocket(`ws://127.0.0.1:${port}?room=poll&client=host`);
+  let host, voter;
   const lobbyMessages = messages(lobby);
-  t.after(async () => { lobby.terminate(); await new Promise(resolve => wss.close(resolve)); await new Promise(resolve => server.close(resolve)); });
+  t.after(async () => {
+    for (const socket of [lobby, host, voter]) socket?.terminate();
+    await new Promise(resolve => wss.close(resolve));
+    await new Promise(resolve => server.close(resolve));
+  });
   await opened(lobby);
   lobby.send(JSON.stringify({ type: 'createPoll', question: 'Best color?', choices: ['Red', 'Blue'] }));
   const created = await waitMessage(lobbyMessages, 'pollCreated');
 
-  const host = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=host&creator=${created.creatorToken}`);
-  const voter = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=voter`);
+  host = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=host&creator=${created.creatorToken}`);
+  voter = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=voter`);
   const hostMessages = messages(host), voterMessages = messages(voter);
   await Promise.all([opened(host), opened(voter)]);
   const joined = await waitMessage(voterMessages, 'pollState', state => state.connected === 2);

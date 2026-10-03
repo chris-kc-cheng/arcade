@@ -871,7 +871,8 @@ function joinPoll(socket, id, client, creatorToken) {
   }
   socket.pollClient = client;
   socket.pollCreator = creatorToken;
-  if (client !== poll.ownerClient) poll.participants.add(client);
+  const isCreator = creatorToken === poll.creatorToken;
+  if (!isCreator) poll.participants.add(client);
   poll.sockets.add(socket);
   broadcastPoll(poll);
   socket.on('message', raw => {
@@ -880,7 +881,7 @@ function joinPoll(socket, id, client, creatorToken) {
     const action = cleanPollAction(message);
     if (!action) return;
     if (action.type === 'vote') {
-      if (client === poll.ownerClient || poll.showingResults || poll.voters.has(client) || action.choice >= poll.choices.length) return;
+      if (isCreator || poll.showingResults || poll.voters.has(client) || action.choice >= poll.choices.length) return;
       poll.voters.add(client);
       poll.responses.push({ choice: action.choice });
     } else {
@@ -909,7 +910,7 @@ function addPollLobby(socket, request, client, creatorToken) {
     let pollId;
     do { pollId = crypto.randomBytes(3).toString('hex').toUpperCase(); } while (polls.has(pollId));
     const token = crypto.randomBytes(24).toString('base64url');
-    polls.set(pollId, { ...action, id: pollId, creatorToken: token, ownerClient: client, participants: new Set(), sockets: new Set(), responses: [], voters: new Set(), showingResults: false });
+    polls.set(pollId, { ...action, id: pollId, creatorToken: token, participants: new Set(), sockets: new Set(), responses: [], voters: new Set(), showingResults: false });
     socket.send(JSON.stringify({ type: 'pollCreated', id: pollId, creatorToken: token }));
   });
 }
