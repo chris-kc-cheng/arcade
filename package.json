@@ -11,7 +11,9 @@
     "dev": "concurrently --kill-others --names client,server --prefix-colors cyan,green \"npm:dev:client\" \"npm:dev:server\"",
     "dev:client": "esbuild src/app.jsx --bundle --sourcemap --outfile=public/react-app.js --watch",
     "dev:server": "node --watch server.js --dev",
-    "test": "node --test"
+    "test": "node --test",
+    "screenshots": "npm run build && node scripts/capture-screenshots.js",
+    "screenshots:check": "node scripts/capture-screenshots.js --check"
   },
   "engines": {
     "node": ">=18"

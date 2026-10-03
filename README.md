@@ -12,20 +12,14 @@
 | <img src="public/screenshots/fighter.png" alt="Line Fighter gameplay" width="320" height="180"> | <img src="public/screenshots/snake.png" alt="Snake gameplay" width="320" height="180"> | <img src="public/screenshots/bigtwo.png" alt="Big-D gameplay" width="320" height="180"> |
 | Fight a CPU or another player with stick-figure special moves. | Share one real-time Snake grid with every connected player. | Play a shared Big Two card game for one to four players. |
 
-| Type/Off |
-| --- |
-| <img src="public/screenshots/typing.svg" alt="Type/Off solo and two-player typing challenge" width="640" height="360"> |
-| Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. |
+| Type/Off | Many Words | Quick Poll |
+| --- | --- | --- |
+| <img src="public/screenshots/typing.svg" alt="Type/Off typing challenge illustration" width="320" height="180"> | <img src="public/screenshots/wordle.svg" alt="Many Words variable-length word game illustration" width="320" height="180"> | <img src="public/screenshots/poll.svg" alt="Quick Poll illustration" width="320" height="180"> |
+| Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. | Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. | Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
 
-| Many Words |
-| --- |
-| <img src="public/screenshots/wordle.svg" alt="Many Words variable-length solo word game" width="640" height="360"> |
-| Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. |
-
-| Quick Poll |
-| --- |
-| <img src="public/screenshots/poll.svg" alt="Quick Poll creation screen" width="640" height="360"> |
-| Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
+<!-- screenshot-status:start -->
+The first six previews are earlier browser captures; Type/Off, Many Words, and Quick Poll are illustrations. All existing source images are 1280×720 and every thumbnail is 320×180. Updated browser captures of all nine experiences are still pending. See [the local capture workflow](docs/screenshot-capture.md).
+<!-- screenshot-status:end -->
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, and live shareable Quick Polls. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
@@ -39,6 +33,12 @@ npm run dev
 ```
 
 Open <http://localhost:3000> in multiple browser windows to try the real-time modes. Development mode watches the React client and Node server and reloads connected tabs automatically. Use `npm start` for a production build and server.
+
+### Visual assets
+
+Run `npm run screenshots:check` to verify all nine showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to nine PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+
+The shared browser and install icons come from `public/icons/arcade.svg`. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
 ## How HTTPS and WebSockets work
 

@@ -121,7 +121,7 @@ function render(previousGuessCount = 0) {
     : state.status === 'lost'
       ? `The answer was ${state.answer.toUpperCase()}. Select PLAY AGAIN for a new word.`
       : `${6 - state.guesses.length} guesses remaining`);
-  if (!finished) $('#guess').focus();
+  if (!finished && !document.activeElement?.closest('.arcade-topbar,.arcade-debug-panel')) $('#guess').focus();
 }
 
 function handleMessage(event) {
@@ -138,6 +138,7 @@ function handleMessage(event) {
   if (message.type === 'wordleState') {
     const previousGuessCount = state?.guesses.length || 0;
     state = message;
+    $('#reset').disabled = false;
     setPending(false);
     render(previousGuessCount);
   }
@@ -147,13 +148,12 @@ function connect() {
   clearTimeout(reconnectTimer);
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/?room=wordle&client=${encodeURIComponent(clientId)}`);
   socket.onopen = () => {
-    $('#connection').textContent = '● PRIVATE & LIVE';
     const name = sessionStorage.getItem('arcade-name');
     if (name) send({ type: 'setName', name });
   };
   socket.onclose = () => {
     setPending(false);
-    $('#connection').textContent = '● RECONNECTING';
+    $('#reset').disabled = true;
     $('#guess').disabled = true;
     $('#guessForm button').disabled = true;
     document.querySelectorAll('#keyboard button').forEach(button => { button.disabled = true; });
@@ -185,7 +185,3 @@ document.querySelectorAll('[data-length]').forEach(button => {
     if (send({ type: 'length', length: Number(button.dataset.length) })) setPending(true);
   };
 });
-document.querySelectorAll('.arcade-nav a').forEach(link => link.addEventListener('click', event => {
-  event.preventDefault();
-  if (confirm(`Switch everyone to ${link.title}?`)) send({ type: 'switchGame', path: link.getAttribute('href') });
-}));

@@ -1,7 +1,6 @@
 const canvas = document.querySelector('#game');
 const ctx = canvas.getContext('2d');
 const scores = document.querySelector('#scores');
-const connection = document.querySelector('#connection');
 const respawn = document.querySelector('#respawn');
 const respawnCount = respawn.querySelector('b');
 const messageBox = document.querySelector('#message');
@@ -72,9 +71,9 @@ function render(){
 function send(type,data={}){if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type,...data}));}
 function connect(){
   const protocol=location.protocol==='https:'?'wss':'ws';socket=new WebSocket(`${protocol}://${location.host}?room=tanks`);
-  socket.onopen=()=>{connection.classList.add('online');connection.querySelector('span').textContent='LIVE MATCH';};
-  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='tankWelcome')selfId=msg.selfId;if(msg.type==='tankState'){state=msg;renderScores();const player=me();if(player&&!player.alive){deathAt=player.respawnAt;respawn.classList.add('show');}else respawn.classList.remove('show');}if(msg.type==='kill'&&msg.killerId===selfId)notify(`TARGET ELIMINATED  +1`);};
-  socket.onclose=()=>{connection.classList.remove('online');connection.querySelector('span').textContent='RECONNECTING';clearTimeout(reconnectTimer);reconnectTimer=setTimeout(connect,1200);};
+  socket.onopen=()=>{const name=sessionStorage.getItem('arcade-name');if(name)send('setName',{name});};
+  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='switchGame'&&msg.path!==location.pathname){location.assign(msg.path);return;}if(msg.type==='tankWelcome')selfId=msg.selfId;if(msg.type==='tankState'){state=msg;document.querySelector('#reset').disabled=false;renderScores();const player=me();if(player&&!player.alive){deathAt=player.respawnAt;respawn.classList.add('show');}else respawn.classList.remove('show');}if(msg.type==='kill'&&msg.killerId===selfId)notify(`TARGET ELIMINATED  +1`);};
+  socket.onclose=()=>{document.querySelector('#reset').disabled=true;clearTimeout(reconnectTimer);reconnectTimer=setTimeout(connect,1200);};
 }
 function renderScores(){scores.innerHTML=[...state.players].sort((a,b)=>b.score-a.score).map(p=>`<div class="score-row ${p.id===selfId?'me':''}"><span><i class="dot" style="--tank-color:${p.color}"></i>${p.name}${p.id===selfId?' · YOU':''}</span><span>${p.score}</span></div>`).join('');}
 function notify(text){messageBox.textContent=text;messageBox.classList.add('show');setTimeout(()=>messageBox.classList.remove('show'),1700);}
@@ -83,6 +82,9 @@ function inputLoop(now){
   if(deathAt){respawnCount.textContent=Math.max(0,Math.ceil((deathAt-Date.now())/1000));}
   last=now;requestAnimationFrame(inputLoop);
 }
-addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if(e.code==='Space'){e.preventDefault();send('tankFire');}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
+addEventListener('keydown',e=>{if(window.ArcadePlatform.isInteractiveTarget(e.target))return;keys.add(e.key.toLowerCase());if(e.code==='Space'){e.preventDefault();send('tankFire');}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 canvas.addEventListener('pointermove',e=>{aim={x:(e.clientX/innerWidth)*2-1,y:(e.clientY/innerHeight)*2-1};});canvas.addEventListener('pointerdown',()=>send('tankFire'));
 addEventListener('resize',resize);resize();connect();requestAnimationFrame(render);requestAnimationFrame(inputLoop);
+
+
+document.querySelector('#reset').onclick=()=>{if(confirm('Reset all Tank scores and redeploy everyone?'))send('tankReset')};
