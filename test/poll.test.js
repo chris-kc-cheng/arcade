@@ -3,10 +3,10 @@ const assert = require('node:assert/strict');
 const { cleanPollAction } = require('../lib/protocol');
 
 test('poll protocol validates creation, voting, and creator actions', () => {
-  assert.deepEqual(cleanPollAction({ type: 'createPoll', question: ' Lunch? ', choices: [' Pizza ', 'Tacos'], allowText: true }), { type: 'createPoll', question: 'Lunch?', choices: ['Pizza', 'Tacos'], allowText: true });
+  assert.deepEqual(cleanPollAction({ type: 'createPoll', question: ' Lunch? ', choices: [' Pizza ', 'Tacos'], allowText: true }), { type: 'createPoll', question: 'Lunch?', choices: ['Pizza', 'Tacos'] });
   assert.equal(cleanPollAction({ type: 'createPoll', question: '', choices: ['A', 'B'] }), null);
   assert.equal(cleanPollAction({ type: 'createPoll', question: 'Pick', choices: ['Same', 'same'] }), null);
-  assert.deepEqual(cleanPollAction({ type: 'vote', choice: 1, text: ' Because! ' }), { type: 'vote', choice: 1, text: 'Because!' });
+  assert.deepEqual(cleanPollAction({ type: 'vote', choice: 1, text: ' Because! ' }), { type: 'vote', choice: 1 });
   assert.equal(cleanPollAction({ type: 'vote', choice: -1 }), null);
   assert.equal(cleanPollAction({ type: 'showResults', creatorToken: 7 }), null);
 });
@@ -20,7 +20,7 @@ test('poll state is authoritative and creator-only controls are enforced', async
   const lobbyMessages = messages(lobby);
   t.after(async () => { lobby.terminate(); await new Promise(resolve => wss.close(resolve)); await new Promise(resolve => server.close(resolve)); });
   await opened(lobby);
-  lobby.send(JSON.stringify({ type: 'createPoll', question: 'Best color?', choices: ['Red', 'Blue'], allowText: true }));
+  lobby.send(JSON.stringify({ type: 'createPoll', question: 'Best color?', choices: ['Red', 'Blue'] }));
   const created = await waitMessage(lobbyMessages, 'pollCreated');
 
   const host = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=host&creator=${created.creatorToken}`);
@@ -28,7 +28,7 @@ test('poll state is authoritative and creator-only controls are enforced', async
   const hostMessages = messages(host), voterMessages = messages(voter);
   await Promise.all([opened(host), opened(voter)]);
   await waitMessage(voterMessages, 'pollState', state => state.connected === 2);
-  voter.send(JSON.stringify({ type: 'vote', choice: 1, text: 'Ocean' }));
+  voter.send(JSON.stringify({ type: 'vote', choice: 1 }));
   await waitMessage(hostMessages, 'pollState', state => state.submitted === 1);
   voter.send(JSON.stringify({ type: 'vote', choice: 0, text: 'duplicate' }));
   voter.send(JSON.stringify({ type: 'showResults', creatorToken: 'wrong' }));
@@ -37,7 +37,9 @@ test('poll state is authoritative and creator-only controls are enforced', async
   assert.equal(hostMessages.at(-1).showingResults, false);
   host.send(JSON.stringify({ type: 'showResults', creatorToken: created.creatorToken }));
   const results = await waitMessage(voterMessages, 'pollState', state => state.showingResults);
-  assert.deepEqual(results.results, { totals: [0, 1], texts: ['Ocean'] });
+  assert.deepEqual(results.results, { totals: [0, 1] });
+  host.send(JSON.stringify({ type: 'resetPoll', creatorToken: created.creatorToken }));
+  await waitMessage(voterMessages, 'pollReset');
   host.terminate(); voter.terminate();
 });
 

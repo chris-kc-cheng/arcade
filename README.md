@@ -25,7 +25,7 @@
 | Quick Poll |
 | --- |
 | <img src="public/screenshots/poll.svg" alt="Quick Poll creation screen" width="640" height="360"> |
-| Create a live multiple-choice poll, share it by QR code, collect optional written responses, and reveal synchronized results. |
+| Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, and live shareable Quick Polls. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
