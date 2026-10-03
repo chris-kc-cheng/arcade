@@ -1,6 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { cleanPollAction } = require('../lib/protocol');
+
+test('poll creation page hides poll-only panels until a poll is ready', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../public/poll.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../public/poll.css'), 'utf8');
+
+  assert.match(html, /<section id="poll" class="poll-layout" hidden>/);
+  assert.match(css, /\[hidden\]\{display:none!important\}/);
+});
 
 test('poll protocol validates creation, voting, and creator actions', () => {
   assert.deepEqual(cleanPollAction({ type: 'createPoll', question: ' Lunch? ', choices: [' Pizza ', 'Tacos'], allowText: true }), { type: 'createPoll', question: 'Lunch?', choices: ['Pizza', 'Tacos'] });
