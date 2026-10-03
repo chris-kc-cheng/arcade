@@ -46,14 +46,15 @@ function renderPresence(players) {
 }
 function render() {
   $('#create').hidden = true; $('#poll').hidden = false; $('#question').textContent = state.question; $('#pollCode').textContent = `POLL ${state.id}`;
-  const eligibleParticipants = state.eligibleParticipants || 0;
-  $('#responseProgress').textContent = `${state.submitted} OF ${eligibleParticipants} ${eligibleParticipants === 1 ? 'PERSON' : 'PEOPLE'} SUBMITTED`;
+  const connected = state.connected || 0;
+  $('#responseProgress').textContent = `${state.submitted} RESPONDED · ${connected} CONNECTED`;
   $('.share').hidden = !state.isCreator;
   $('#poll').classList.toggle('responding', !state.isCreator);
   const shareUrl = `${location.origin}/poll?id=${encodeURIComponent(state.id)}`;
   if (state.isCreator && !$('#qr').src) $('#qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=640x640&margin=12&data=${encodeURIComponent(shareUrl)}`;
   renderPresence(state.participants || []); $('#reset').hidden = !state.isCreator; $('#showResults').hidden = !state.isCreator || state.showingResults;
   const show = state.showingResults && state.results;
+  $('#responseProgress').hidden = show;
   $('#voteForm').hidden = show || state.hasVoted; $('#thanks').hidden = show || !state.hasVoted; $('#results').hidden = !show;
   if (!show) {
     $('#answers').replaceChildren(...state.choices.map((choice, index) => { const label = document.createElement('label'); label.className = 'answer'; const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'choice'; radio.value = index; radio.required = true; label.append(radio, document.createTextNode(choice)); return label; }));
