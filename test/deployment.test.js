@@ -59,3 +59,14 @@ test('Hostinger current symlink exposes the built public directory', () => {
     /ln -sfn "\$release_path\/public" "\$\{deploy_path\}\/current"/,
   );
 });
+
+test('every arcade app loads the shared navigation and debug platform', () => {
+  const pages = ['index.html', 'fighter.html', 'snake.html', 'bigtwo.html', 'typing.html', 'wordle.html', 'poll.html', 'tank.html'];
+  for (const page of pages) assert.match(read(`public/${page}`), /<script src="\/platform\.js"><\/script>/, page);
+
+  const platform = read('public/platform.js');
+  assert.match(platform, /class DebugWebSocket extends NativeWebSocket/);
+  assert.match(platform, /arcade-debug-toggle/);
+  assert.match(platform, /arcade-debug-panel/);
+  assert.match(platform, /\['\/poll','≡','Quick Poll'\]/);
+});
