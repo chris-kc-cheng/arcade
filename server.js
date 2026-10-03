@@ -846,7 +846,9 @@ function addWordle(socket, key) {
 function pollState(poll, socket) {
   const isCreator = socket.pollCreator === poll.creatorToken;
   const totals = poll.choices.map((_, index) => poll.responses.filter(response => response.choice === index).length);
-  const participants = [...new Map([...poll.sockets].filter(client => client.platformProfile).map(client => {
+  const participants = [...new Map([...poll.sockets].filter(client => (
+    client.platformProfile && client.pollCreator !== poll.creatorToken
+  )).map(client => {
     const profile = client.platformProfile;
     return [profile.key, { id: profile.key, name: profile.name, ip: profile.ip, room: `poll ${poll.id}`, connectedAt: profile.connectedAt }];
   })).values()];
