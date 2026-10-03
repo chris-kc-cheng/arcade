@@ -68,5 +68,9 @@ test('every arcade app loads the shared navigation and debug platform', () => {
   assert.match(platform, /class DebugWebSocket extends NativeWebSocket/);
   assert.match(platform, /arcade-debug-toggle/);
   assert.match(platform, /arcade-debug-panel/);
+  assert.match(platform, /arcade-debug-close/);
+  assert.match(platform, /data-received-messages/);
+  assert.match(platform, /data-sent-bytes/);
+  assert.match(platform, /new TextEncoder\(\)/);
   assert.match(platform, /\['\/poll','≡','Quick Poll'\]/);
 });
