@@ -13,8 +13,8 @@ function connect() {
   if (pollId) params.set('poll', pollId);
   if (creatorToken) params.set('creator', creatorToken);
   socket = new WebSocket(`${protocol}://${location.host}/?${params}`);
-  socket.onopen = () => { $('#connection').textContent = '● LIVE'; const name = sessionStorage.getItem('arcade-name'); if (name) send({ type: 'setName', name }); };
-  socket.onclose = () => { $('#connection').textContent = '● RECONNECTING'; reconnectTimer = setTimeout(connect, 1200); };
+  socket.onopen = () => { const name = sessionStorage.getItem('arcade-name'); if (name) send({ type: 'setName', name }); };
+  socket.onclose = () => { reconnectTimer = setTimeout(connect, 1200); };
   socket.onmessage = event => {
     let message; try { message = JSON.parse(event.data); } catch { return; }
     if (message.type === 'pollCreated') {
@@ -35,15 +35,6 @@ function addChoice(value = '') {
   const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', 'Remove choice'); remove.onclick = () => { if ($('#choices').children.length > 2) row.remove(); };
   row.append(input, remove); $('#choices').append(row);
 }
-function elapsed(since) { const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000)); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m`; }
-function renderPresence(players) {
-  $('#pollPresence strong').textContent = players.length;
-  $('#pollPresence').setAttribute('aria-label', `${players.length} users connected to this poll`);
-  const details = $('#pollPresence .active-player-details'); details.replaceChildren(...(players.length ? players.map(player => {
-    const row = document.createElement('div'), name = document.createElement('b'), info = document.createElement('span');
-    name.textContent = player.name; info.textContent = `${player.ip} · ${player.room} · connected ${elapsed(player.connectedAt)} ago`; row.append(name, info); return row;
-  }) : [Object.assign(document.createElement('div'), { textContent: 'No connected users' })]));
-}
 function render() {
   $('#create').hidden = true; $('#poll').hidden = false; $('#question').textContent = state.question; $('#pollCode').textContent = `POLL ${state.id}`;
   const connected = state.connected || 0;
@@ -52,7 +43,7 @@ function render() {
   $('#poll').classList.toggle('responding', !state.isCreator);
   const shareUrl = `${location.origin}/poll?id=${encodeURIComponent(state.id)}`;
   if (state.isCreator && !$('#qr').src) $('#qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=640x640&margin=12&data=${encodeURIComponent(shareUrl)}`;
-  renderPresence(state.participants || []); $('#reset').hidden = !state.isCreator; $('#showResults').hidden = !state.isCreator || state.showingResults;
+  window.ArcadePlatform.setRoomCount(state.connected || 0); $('#reset').disabled = !state.isCreator; $('#showResults').hidden = !state.isCreator || state.showingResults;
   const show = state.showingResults && state.results;
   $('#responseProgress').hidden = show;
   $('#voteForm').hidden = show || state.hasVoted; $('#thanks').hidden = show || !state.hasVoted; $('#results').hidden = !show;
@@ -71,5 +62,6 @@ $('#voteForm').onsubmit = event => { event.preventDefault(); const selected = ne
 $('#showResults').onclick = () => send({ type: 'showResults', creatorToken });
 $('#reset').onclick = () => { if (confirm('Close this poll and prepare a new question?')) send({ type: 'resetPoll', creatorToken }); };
 $('#copy').onclick = async () => { await navigator.clipboard.writeText(`${location.origin}/poll?id=${encodeURIComponent(state.id)}`); $('#toast').textContent = 'Poll link copied!'; };
-document.querySelectorAll('.arcade-nav a').forEach(link => link.addEventListener('click', event => { event.preventDefault(); if (confirm(`Switch everyone to ${link.title}?`)) send({ type: 'switchGame', path: link.getAttribute('href') }); }));
+
 connect();
+

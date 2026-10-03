@@ -36,6 +36,7 @@ function togglePause() { if (running) send({ type: 'snakeTogglePause' }); else s
 
 function updateUI() {
   const player = me();
+  resetButton.disabled = !player;
   const playerScore = player?.score || 0;
   if (playerScore > highScore) {
     highScore = playerScore;
@@ -118,6 +119,7 @@ function beep(frequency, duration) {
 }
 
 window.addEventListener('keydown', event => {
+  if (window.ArcadePlatform.isInteractiveTarget(event.target)) return;
   const key = event.key.toLowerCase();
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'p', 'r', ' ', 'enter'].includes(key)) event.preventDefault();
   if (key === 'p') togglePause();
@@ -150,12 +152,10 @@ function connectPlatform() {
       updateUI();
     }
   };
-  platformSocket.onclose = () => setTimeout(connectPlatform, 1200);
+  platformSocket.onclose = () => { resetButton.disabled = true; setTimeout(connectPlatform, 1200); };
 }
 
 document.querySelector('.screen-title').textContent = 'SNAKE';
-document.querySelectorAll('.snake-bar nav a').forEach(link => link.addEventListener('click', event => {
-  event.preventDefault();
-  if (confirm(`Switch everyone to ${link.title}?`)) send({ type: 'switchGame', path: link.getAttribute('href') });
-}));
+
 updateUI(); requestAnimationFrame(loop); connectPlatform();
+

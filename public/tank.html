@@ -6,14 +6,21 @@
   <meta name="theme-color" content="#111712">
   <title>Iron Grid</title>
   <link rel="stylesheet" href="/tank.css">
+  <link rel="stylesheet" href="/platform.css">
+
+  <meta name="application-name" content="Arcade">
+  <meta name="apple-mobile-web-app-title" content="Arcade">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+  <link rel="manifest" href="/manifest.webmanifest">
 </head>
 <body>
   <canvas id="game" aria-label="3D multiplayer tank arena"></canvas>
-  <header class="game-bar">
-    <nav class="arcade-nav" aria-label="Arcade games"><a href="/" class="back" aria-label="Drawing board" title="Drawing board">🖊️</a><a href="/tank" class="back active" aria-label="Tank" title="Tank" aria-current="page">🚜</a><a href="/penalty" class="back" aria-label="Penalty shootout" title="Penalty shootout">⚽</a><a href="/fighter" class="back" aria-label="Line Fighter" title="Line Fighter">👊</a><a href="/snake" class="back" aria-label="Snake" title="Snake">🐍</a><a href="/bigtwo" class="back" aria-label="Big-D" title="Big-D">♦</a><a href="/typing" class="back" title="Type/Off" aria-label="Type/Off">⌨️</a><a href="/wordle" title="Many Words" aria-label="Many Words">W</a><a href="/poll" title="Quick Poll" aria-label="Quick Poll">▣</a></nav>
-    <div class="title"><span>IRON</span><strong>GRID</strong></div>
-    <div id="connection" class="connection"><i></i><span>CONNECTING</span></div>
-  </header>
+  <header class="arcade-topbar" data-arcade-game="tank"><button id="reset" type="button" disabled>RESET MATCH</button></header>
   <section class="scoreboard" aria-label="Scoreboard">
     <div class="score-head"><span>PILOT</span><span>KILLS</span></div>
     <div id="scores"></div>
@@ -31,3 +38,4 @@
   <script src="/tank.js"></script>
 </body>
 </html>
+

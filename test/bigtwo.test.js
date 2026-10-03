@@ -4,38 +4,34 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const { WebSocket } = require('ws');
 
-test('Big-D navigation sends shared switches and follows server switches', () => {
+test('Big-D follows server switches and preserves spectator reset restrictions', () => {
   const elements = new Map();
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, { classList: { add() {}, remove() {} }, replaceChildren() {}, remove() {} });
     return elements.get(selector);
   };
-  let click, socket;
-  const sent = [], navigated = [];
-  const link = { title: 'Drawing board', getAttribute: () => '/', addEventListener: (_, handler) => { click = handler; } };
+  let socket, roomCount;
+  const navigated = [];
   class FakeSocket {
     static OPEN = 1;
     constructor() { this.readyState = 1; socket = this; }
-    send(raw) { sent.push(JSON.parse(raw)); }
+    send() {}
   }
   vm.runInNewContext(fs.readFileSync(require.resolve('../public/bigtwo.js'), 'utf8'), {
-    document: { querySelector: element, querySelectorAll: () => [link], createElement: () => ({}) },
+    document: { querySelector: element, createElement: () => ({}) },
     location: { protocol: 'http:', host: 'localhost', pathname: '/bigtwo', assign: path => navigated.push(path) },
-    WebSocket: FakeSocket, confirm: () => true
+    window: { ArcadePlatform: { setRoomCount: count => { roomCount = count; } } },
+    WebSocket: FakeSocket
   });
-  let prevented = false;
-  click({ preventDefault() { prevented = true; } });
-  assert.equal(prevented, true);
-  assert.deepEqual(sent, [{ type: 'switchGame', path: '/' }]);
   socket.onmessage({ data: JSON.stringify({ type: 'switchGame', path: '/bigtwo' }) });
   assert.deepEqual(navigated, []);
   socket.onmessage({ data: JSON.stringify({ type: 'switchGame', path: '/' }) });
   assert.deepEqual(navigated, ['/']);
   socket.onmessage({ data: JSON.stringify({ type: 'bigTwoState', onlineCount: 5, role: 'spectator', players: [], hand: [], status: 'waiting', notice: 'Waiting', spectators: 1 }) });
-  assert.equal(element('#onlineCount').textContent, '5 PLAYERS ONLINE');
+  assert.equal(roomCount, 5);
   assert.equal(element('#reset').disabled, true);
   socket.onclose();
-  assert.equal(element('#onlineCount').textContent, 'OFFLINE');
+  assert.equal(element('#reset').disabled, true);
 });
 
 test('Big-D counts connected humans including spectators and synchronizes exits', async t => {
@@ -80,3 +76,4 @@ test('Big-D counts connected humans including spectators and synchronizes exits'
   assert.ok(messages.every(items => !items.some(m => m.path === '/invalid.html')));
   assert.ok(messages.every(items => !items.some(m => m.onlineCount === 999)));
 });
+
