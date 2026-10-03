@@ -15,6 +15,45 @@ let pending = false;
 let pendingTimer;
 let reconnectTimer;
 
+const keyboardRows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+
+function pressKey(key) {
+  const input = $('#guess');
+  if (!state || state.status !== 'playing' || input.disabled) return;
+  if (key === 'enter') {
+    $('#guessForm').requestSubmit();
+  } else if (key === 'backspace') {
+    input.value = input.value.slice(0, -1);
+    input.focus();
+  } else if (input.value.length < state.length) {
+    input.value += key.toUpperCase();
+    input.focus();
+  }
+}
+
+function buildKeyboard() {
+  const rows = keyboardRows.map((letters, rowIndex) => {
+    const row = document.createElement('div');
+    row.className = 'keyboard-row';
+    const keys = [...letters];
+    if (rowIndex === 2) keys.unshift('enter');
+    if (rowIndex === 2) keys.push('backspace');
+    keys.forEach(key => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.key = key;
+      button.classList.toggle('wide', key.length > 1);
+      button.textContent = key === 'backspace' ? '⌫' : key === 'enter' ? 'Enter' : key;
+      button.setAttribute('aria-label', key === 'backspace' ? 'Backspace' : key === 'enter' ? 'Submit guess' : `Letter ${key.toUpperCase()}`);
+      button.addEventListener('click', () => pressKey(key));
+      row.append(button);
+    });
+    return row;
+  });
+  $('#keyboard').replaceChildren(...rows);
+}
+buildKeyboard();
+
 function send(message) {
   if (socket.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify(message));
@@ -59,6 +98,15 @@ function render(previousGuessCount = 0) {
     rows.push(line);
   }
   $('#board').replaceChildren(...rows);
+
+  document.querySelectorAll('#keyboard [data-key]').forEach(button => {
+    const status = state.letters?.[button.dataset.key] || '';
+    button.disabled = state.status !== 'playing';
+    button.classList.remove('correct', 'present', 'absent');
+    if (status) button.classList.add(status);
+    const letter = button.dataset.key;
+    if (letter.length === 1) button.setAttribute('aria-label', `Letter ${letter.toUpperCase()}${status ? `, ${status}` : ', unused'}`);
+  });
 
   const finished = state.status !== 'playing';
   $('#guess').disabled = finished;
@@ -108,6 +156,7 @@ function connect() {
     $('#connection').textContent = '● RECONNECTING';
     $('#guess').disabled = true;
     $('#guessForm button').disabled = true;
+    document.querySelectorAll('#keyboard button').forEach(button => { button.disabled = true; });
     reconnectTimer = setTimeout(connect, 1000);
   };
   socket.onmessage = handleMessage;
