@@ -852,9 +852,9 @@ function pollState(poll, socket) {
   })).values()];
   return {
     type: 'pollState', id: poll.id, question: poll.question, choices: poll.choices,
-    allowText: poll.allowText, connected: participants.length, participants, submitted: poll.responses.length,
+    connected: participants.length, participants, submitted: poll.responses.length,
     hasVoted: poll.voters.has(socket.pollClient), isCreator, showingResults: poll.showingResults,
-    results: poll.showingResults || isCreator ? { totals, texts: poll.responses.map(response => response.text).filter(Boolean) } : undefined
+    results: poll.showingResults || isCreator ? { totals } : undefined
   };
 }
 
@@ -878,16 +878,16 @@ function joinPoll(socket, id, client, creatorToken) {
     const action = cleanPollAction(message);
     if (!action) return;
     if (action.type === 'vote') {
-      if (poll.showingResults || poll.voters.has(client) || action.choice >= poll.choices.length || (!poll.allowText && action.text)) return;
+      if (poll.showingResults || poll.voters.has(client) || action.choice >= poll.choices.length) return;
       poll.voters.add(client);
-      poll.responses.push({ choice: action.choice, text: poll.allowText ? action.text : '' });
+      poll.responses.push({ choice: action.choice });
     } else {
       if (action.creatorToken !== poll.creatorToken) return;
       if (action.type === 'showResults') poll.showingResults = true;
       if (action.type === 'resetPoll') {
-        poll.responses = [];
-        poll.voters.clear();
-        poll.showingResults = false;
+        for (const client of poll.sockets) if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ type: 'pollReset' }));
+        polls.delete(poll.id);
+        return;
       }
     }
     broadcastPoll(poll);
