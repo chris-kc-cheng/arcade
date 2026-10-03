@@ -46,6 +46,8 @@ function renderPresence(players) {
 }
 function render() {
   $('#create').hidden = true; $('#poll').hidden = false; $('#question').textContent = state.question; $('#pollCode').textContent = `POLL ${state.id}`;
+  const eligibleParticipants = state.eligibleParticipants || 0;
+  $('#responseProgress').textContent = `${state.submitted} OF ${eligibleParticipants} ${eligibleParticipants === 1 ? 'PERSON' : 'PEOPLE'} SUBMITTED`;
   $('.share').hidden = !state.isCreator;
   $('#poll').classList.toggle('responding', !state.isCreator);
   const shareUrl = `${location.origin}/poll?id=${encodeURIComponent(state.id)}`;
@@ -58,7 +60,7 @@ function render() {
   } else {
     const total = state.results.totals.reduce((sum, count) => sum + count, 0);
     const rows = state.choices.map((choice, index) => { const count = state.results.totals[index], percent = total ? Math.round(count / total * 100) : 0; const row = document.createElement('div'); row.className = 'bar'; row.innerHTML = `<div class="bar-head"><span></span><b>${count} · ${percent}%</b></div><div class="track"><div class="fill" style="width:${percent}%"></div></div>`; row.querySelector('span').textContent = choice; return row; });
-    $('#results').replaceChildren(...rows); $('#status').textContent = `${total} RESPONSE${total === 1 ? '' : 'S'} · RESULTS`;
+    $('#results').replaceChildren(...rows); $('#status').textContent = 'RESULTS';
   }
 }
 
