@@ -20,7 +20,7 @@
 | Many Words |
 | --- |
 | <img src="public/screenshots/wordle.svg" alt="Many Words variable-length solo word game" width="640" height="360"> |
-| Play a private Wordle-style puzzle with four-, five-, six-, seven-, or eight-letter words from a 2,465-word library. |
+| Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. |
 
 | Quick Poll |
 | --- |
