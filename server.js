@@ -8,7 +8,7 @@ const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
-const { words: wordleWords, scoreGuess, randomWord } = require('./lib/wordle');
+const { words: wordleWords, scoreGuess, letterStatuses, randomWord } = require('./lib/wordle');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
@@ -787,7 +787,7 @@ snakeLoop.unref();
 
 function wordleState(game) {
   return {
-    type: 'wordleState', length: game.length, guesses: game.guesses,
+    type: 'wordleState', length: game.length, guesses: game.guesses, letters: letterStatuses(game.guesses),
     status: game.status, message: game.message,
     availableByLength: Object.fromEntries(Object.entries(wordleWords).map(([length, list]) => [length, list.length])),
     answer: game.status === 'playing' ? undefined : game.answer
