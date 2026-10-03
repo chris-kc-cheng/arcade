@@ -37,7 +37,9 @@ test('poll state is authoritative and creator-only controls are enforced', async
   const voter = new WebSocket(`ws://127.0.0.1:${port}?room=poll&poll=${created.id}&client=voter`);
   const hostMessages = messages(host), voterMessages = messages(voter);
   await Promise.all([opened(host), opened(voter)]);
-  await waitMessage(voterMessages, 'pollState', state => state.connected === 2);
+  const joined = await waitMessage(voterMessages, 'pollState', state => state.connected === 2);
+  assert.equal(joined.eligibleParticipants, 1);
+  host.send(JSON.stringify({ type: 'vote', choice: 0 }));
   voter.send(JSON.stringify({ type: 'vote', choice: 1 }));
   await waitMessage(hostMessages, 'pollState', state => state.submitted === 1);
   voter.send(JSON.stringify({ type: 'vote', choice: 0, text: 'duplicate' }));
