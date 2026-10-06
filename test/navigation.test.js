@@ -66,15 +66,15 @@ function platform(game = 'board', legacy = false) {
   context.window = context; vm.runInNewContext(fs.readFileSync(require.resolve('../public/platform.js'), 'utf8'), context);
   return {context, document, header, reset, sent, prompts, sockets, storage, timers, connect() { const socket = new context.WebSocket('ws://localhost/?room=test'); socket.emit('open'); return socket; }, packet(socket, message) { socket.emit('message',{data:JSON.stringify(message)}); }};
 }
-const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll'];
+const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll','cube'];
 
-test('all nine games mount one identical shared shell and current route', () => {
+test('all ten games mount one identical shared shell and current route', () => {
   const signature = node => `${node.tagName}.${node.className}[${node.children.map(signature).join(',')}]`;
   let expected;
   for (const game of routes) {
     const env = platform(game); const {header,document,context} = env;
     const api = context.ArcadePlatform.mount(header,{game});
-    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,9);
+    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,10);
     assert.equal(links.filter(link => link.getAttribute('aria-current') === 'page').length,1);
     assert.equal(links.find(link => link.getAttribute('aria-current') === 'page').href,game === 'board' ? '/' : `/${game}`);
     links.forEach(link => assert.ok(link.getAttribute('aria-label')));
@@ -138,7 +138,7 @@ test('debug retains at most 250 entries, accounts bytes, clears, and restores ke
 });
 
 test('legacy entry points delegate shared features and game shortcuts respect navigation', () => {
-  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll']) {
+  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll','cube']) {
     const html = fs.readFileSync(require.resolve(`../public/${game}.html`),'utf8');
     assert.match(html,new RegExp(`<header class="arcade-topbar" data-arcade-game="${game}">`));
     assert.doesNotMatch(html,/<nav|id="connection"|id="pollPresence"|id="fighterName"/);

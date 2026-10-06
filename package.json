@@ -19,6 +19,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "cubejs": "^1.3.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "ws": "^8.22.0"

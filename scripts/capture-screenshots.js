@@ -13,7 +13,7 @@ const net = require('node:net');
 const WebSocket = require('ws');
 
 const ROOT = path.resolve(__dirname, '..');
-const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll'];
+const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube'];
 const WIDTH = 1920, HEIGHT = 1080;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -35,7 +35,7 @@ function dimensions(file) {
 function checkShowcase(root = ROOT) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const images = [...readme.matchAll(/<img\b[^>]*src="(public\/screenshots\/([^".]+)\.(?:png|svg))"[^>]*>/g)];
-  if (images.length !== GAMES.length) throw new Error('README must showcase exactly nine experiences');
+  if (images.length !== GAMES.length) throw new Error('README must showcase exactly ten experiences');
   let common;
   const found = new Set();
   for (const [tag, source, game] of images) {
@@ -170,7 +170,10 @@ async function capture() {
         await waitFor(async () => (await tab.state('pollState'))?.showingResults, 'poll results');
       } else {
         tab = await page(route);
-        if (game === 'board') {
+        if (game === 'cube') {
+          await waitFor(() => tab.state('cubeState'), 'cube state');
+          await tab.send({type:'scramble'}); await peer('cube', 'Sam');
+        } else if (game === 'board') {
           const sam = await peer('doodle', 'Sam'), jo = await peer('doodle', 'Jo');
           const stroke = async (actor, points, size = 5) => {
             for (let i = 1; i < points.length; i++) actor.send({ type: 'stroke', from: { x: points[i-1][0], y: points[i-1][1] }, to: { x: points[i][0], y: points[i][1] }, size, tool: 'pen' });
@@ -221,7 +224,7 @@ async function capture() {
       await tab.evaluate('document.activeElement?.blur(); window.scrollTo(0,0)');
       const navigation = await tab.evaluate(`({ path:location.pathname, links:[...document.querySelectorAll('.arcade-nav a')].map(a=>({href:a.getAttribute('href'),current:a.getAttribute('aria-current')})), header:document.querySelector('header').getBoundingClientRect().toJSON(), scrollWidth:document.documentElement.scrollWidth })`);
       if (tab.errors.length) throw new Error(`${game}: browser exceptions: ${tab.errors.join(', ')}`);
-      if (navigation.path !== route || navigation.links.length !== 9 || navigation.links.filter(link => link.current === 'page').length !== 1) throw new Error(`${game}: navigation is not ready`);
+      if (navigation.path !== route || navigation.links.length !== GAMES.length || navigation.links.filter(link => link.current === 'page').length !== 1) throw new Error(`${game}: navigation is not ready`);
       if (navigation.header.top < 0 || navigation.header.right > WIDTH + 1 || navigation.scrollWidth > WIDTH) throw new Error(`${game}: header or page overflows the capture viewport`);
       const shot = await tab.call('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
       fs.writeFileSync(path.join(staging, `${game}.png`), Buffer.from(shot.data, 'base64'));
@@ -236,7 +239,7 @@ async function capture() {
     let readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     readme = readme.replace(/public\/screenshots\/(typing|wordle|poll)\.svg/g, 'public/screenshots/$1.png');
     readme = readme.replace(/(alt="[^"]*) illustration"/g, '$1 screenshot"');
-    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll nine previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
+    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll ten previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
     fs.writeFileSync(path.join(ROOT, 'README.md'), readme);
     fs.writeFileSync(path.join(ROOT, 'public/screenshots/capture-manifest.json'), JSON.stringify({ capturedAt: new Date().toISOString(), method: 'Chromium CDP, local server, 100% scale', scenes: evidence }, null, 2) + '\n');
     checkShowcase();

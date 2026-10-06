@@ -10,6 +10,8 @@ const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction 
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
 const { words: wordleWords, scoreGuess, letterStatuses, randomWord } = require('./lib/wordle');
 
+const { Worker } = require('node:worker_threads');
+const { Cube, faces: cubeFaces, solved: solvedCube, validate: validateCube, cleanAction: cleanCubeAction } = require('./lib/cube');
 const PORT = Number(process.env.PORT) || 3000;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
 const developmentMode = process.argv.includes('--dev');
@@ -134,8 +136,8 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html']]);
 const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 let currentGamePath = '/';
 function cleanName(value) {
@@ -920,6 +922,62 @@ function addPollLobby(socket, request, client, creatorToken) {
   });
 }
 
+// A single collaborative cube; every connected member can edit and guide playback.
+const cubeClients = new Set();
+let cubeState = {type:'cubeState', stickers:solvedCube, revision:0, phase:'editing', moves:[], step:0, message:'Click any sticker to cycle its color.'};
+let cubeFrames = [], cubeTimer, cubeWorker;
+function cubeBroadcast() { const packet = JSON.stringify(cubeState); for (const peer of cubeClients) if (peer.readyState === WebSocket.OPEN) peer.send(packet); }
+function stopCube() { clearTimeout(cubeTimer); cubeWorker?.terminate(); cubeWorker = null; }
+function advanceCube() {
+  if (cubeState.step >= cubeState.moves.length) return;
+  cubeState.before = cubeState.stickers;
+  cubeState.move = cubeState.moves[cubeState.step];
+  cubeState.stickers = cubeFrames[++cubeState.step];
+  cubeState.animatedAt = Date.now(); cubeState.revision++;
+  if (cubeState.step === cubeState.moves.length) { cubeState.phase = 'complete'; cubeState.message = 'Cube solved!'; }
+  cubeBroadcast();
+  if (cubeState.phase === 'playing') cubeTimer = setTimeout(advanceCube, 1600);
+}
+function addCube(socket) {
+  cubeClients.add(socket); socket.send(JSON.stringify(cubeState));
+  socket.on('close', () => { cubeClients.delete(socket); if (!cubeClients.size && cubeState.phase === 'playing') { clearTimeout(cubeTimer); cubeState.phase = 'paused'; } });
+  socket.on('message', raw => {
+    let action; try { action = cleanCubeAction(JSON.parse(raw)); } catch { return; }
+    if (!action) return;
+    if (action.type === 'reset' || action.type === 'scramble') {
+      stopCube(); const cube = new Cube();
+      if (action.type === 'scramble') for (let i=0;i<22;i++) cube.move(cubeFaces[Math.floor(Math.random()*6)] + ['',"'",'2'][Math.floor(Math.random()*3)]);
+      cubeState = {type:'cubeState', stickers:cube.asString(), revision:cubeState.revision+1, phase:'editing', moves:[], step:0, message:'Click any sticker to cycle its color.'};
+    } else if (action.type === 'paint' && cubeState.phase !== 'computing' && cubeState.phase !== 'playing' && action.revision === cubeState.revision) {
+      const chars = [...cubeState.stickers]; chars[action.index] = cubeFaces[(cubeFaces.indexOf(chars[action.index])+1)%6];
+      cubeState = {type:'cubeState', stickers:chars.join(''), revision:cubeState.revision+1, phase:'editing', moves:[], step:0, message:'Colors updated. Centers stay fixed.'};
+    } else if (action.type === 'start') {
+      if (cubeState.phase === 'paused') { cubeState.phase='playing'; cubeTimer=setTimeout(advanceCube,1600); }
+      else if (cubeState.phase === 'editing') {
+        if (!validateCube(cubeState.stickers)) { cubeState.message='Impossible cube. Use nine of each color and check the corner and edge stickers.'; }
+        else if (cubeState.stickers === solvedCube) { cubeState.message='This cube is already solved. Try Scramble or enter your cube.'; }
+        else {
+          cubeState.phase='computing'; cubeState.message='Finding a solution…';
+          const worker = cubeWorker = new Worker(path.join(__dirname,'lib/cube-worker.js'), {workerData:cubeState.stickers});
+          worker.on('message', moves => {
+            if (cubeWorker !== worker) return; cubeWorker=null;
+            const cube = Cube.fromString(cubeState.stickers); cubeFrames=[cube.asString()];
+            for (const move of moves) { cube.move(move); cubeFrames.push(cube.asString()); }
+            cubeState.moves=moves; cubeState.step=0; cubeState.phase='playing'; cubeState.message='Follow the highlighted turn. Clockwise is viewed facing that face.';
+            cubeBroadcast(); cubeTimer=setTimeout(advanceCube,1600);
+          });
+          worker.on('error', () => { if (cubeWorker !== worker) return; cubeWorker=null; cubeState.phase='editing'; cubeState.message='Could not calculate a solution. Please try again.'; cubeBroadcast(); });
+        }
+      } else return;
+    } else if (action.type === 'pause' && cubeState.phase === 'playing') { clearTimeout(cubeTimer); cubeState.phase='paused'; }
+    else if (['next','back'].includes(action.type) && ['paused','complete'].includes(cubeState.phase)) {
+      if (action.type === 'next') advanceCube();
+      else if (cubeState.step > 0) { cubeState.step--; cubeState.stickers=cubeFrames[cubeState.step]; cubeState.phase='paused'; cubeState.before=null; cubeState.revision++; }
+    } else return;
+    cubeBroadcast();
+  });
+}
+
 wss.on('connection', (socket, request) => {
   socket.isAlive = true;
   attachPlatformMessages(socket);
@@ -928,6 +986,7 @@ wss.on('connection', (socket, request) => {
   const room = url.searchParams.get('room') || 'doodle';
   let key = clientKey(request);
   registerPlatformSocket(socket, request, key, room);
+  if (room === 'cube') { addCube(socket); return; }
   if (room === 'tanks') {
     addTank(socket, key);
     return;

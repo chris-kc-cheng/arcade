@@ -14,11 +14,16 @@
 
 | Type/Off | Many Words | Quick Poll |
 | --- | --- | --- |
-| <img src="public/screenshots/typing.svg" alt="Type/Off typing challenge illustration" width="320" height="180"> | <img src="public/screenshots/wordle.svg" alt="Many Words variable-length word game illustration" width="320" height="180"> | <img src="public/screenshots/poll.svg" alt="Quick Poll illustration" width="320" height="180"> |
+| <img src="public/screenshots/typing.png" alt="Type/Off typing challenge screenshot" width="320" height="180"> | <img src="public/screenshots/wordle.png" alt="Many Words variable-length word game screenshot" width="320" height="180"> | <img src="public/screenshots/poll.png" alt="Quick Poll screenshot" width="320" height="180"> |
 | Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. | Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. | Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
 
+| Cube Lab |
+| --- |
+| <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> |
+| Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). |
+
 <!-- screenshot-status:start -->
-The first six previews are earlier browser captures; Type/Off, Many Words, and Quick Poll are illustrations. All existing source images are 1280×720 and every thumbnail is 320×180. Updated browser captures of all nine experiences are still pending. See [the local capture workflow](docs/screenshot-capture.md).
+All ten previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
 <!-- screenshot-status:end -->
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, and live shareable Quick Polls. Game state and presence live only in the Node.js process and reset whenever it restarts.
@@ -36,7 +41,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 ### Visual assets
 
-Run `npm run screenshots:check` to verify all nine showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to nine PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+Run `npm run screenshots:check` to verify all ten showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to ten PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
 The shared browser and install icons come from `public/icons/arcade.svg`. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
@@ -154,3 +159,7 @@ Add these repository **Actions secrets** under **Settings → Secrets and variab
 Add the matching public key to `~/.ssh/authorized_keys` on the VPS. Keep the Caddy site configuration shown above in the Caddy deployment, and ensure both Caddy and Arcade use the same external network. Then push to `main`, or run **Deploy production to Hostinger** with `workflow_dispatch`.
 
 Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, including the generated browser bundle at `public/react-app.js`. After the container health check succeeds, `HOSTINGER_DEPLOY_PATH/current` points to the active release's `public` directory, so `index.html` and `react-app.js` are directly available beneath `current`. Failed startups print the last container logs, and the workflow deliberately prevents concurrent production deployments.
+
+## Cube Lab
+
+Open `/cube`. Click the six face grids to cycle white, red, green, yellow, orange, and blue. Centers remain fixed; view each face from outside with white on top and green in front. Start computes a two-phase solution on a server worker, validates color counts and physical solvability, and animates each turn. Pause, Next, Back, Scramble, and Reset synchronize for everyone in the cube room. View rotation is local. State is held in memory. The browser uses dependency-free CSS 3D; `cubejs` is used only on the server.

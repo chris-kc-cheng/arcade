@@ -1,0 +1,636 @@
+{
+  "capturedAt": "2026-10-06T00:09:42.568Z",
+  "method": "Chromium CDP, local server, 100% scale",
+  "scenes": [
+    {
+      "game": "board",
+      "route": "/",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/",
+        "links": [
+          {
+            "href": "/",
+            "current": "page"
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "tank",
+      "route": "/tank",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/tank",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": "page"
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "penalty",
+      "route": "/penalty",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/penalty",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": "page"
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "fighter",
+      "route": "/fighter",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/fighter",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": "page"
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "snake",
+      "route": "/snake",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/snake",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": "page"
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "bigtwo",
+      "route": "/bigtwo",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/bigtwo",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": "page"
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "typing",
+      "route": "/typing",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/typing",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": "page"
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "wordle",
+      "route": "/wordle",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/wordle",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": "page"
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1905,
+          "height": 76,
+          "top": 0,
+          "right": 1905,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1905
+      }
+    },
+    {
+      "game": "poll",
+      "route": "/poll",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/poll",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": "page"
+          },
+          {
+            "href": "/cube",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
+      }
+    },
+    {
+      "game": "cube",
+      "route": "/cube",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/cube",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": "page"
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1905,
+          "height": 76,
+          "top": 0,
+          "right": 1905,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1905
+      }
+    }
+  ]
+}
