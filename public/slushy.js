@@ -50,7 +50,7 @@
   function connect(){
     socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/?room=slushy&client=${encodeURIComponent(client)}`);
     socket.addEventListener('open',()=>{const name=sessionStorage.getItem('arcade-name');if(name)send({type:'setName',name});$('start').disabled=false;});
-    socket.addEventListener('message',event=>{const msg=JSON.parse(event.data);if(msg.type==='slushyState'){state=msg;render();}else if(msg.type==='slushyBest'){$('best').textContent=msg.best.toLocaleString();if(state)state.best=msg.best;}else if(msg.clientId){client=msg.clientId;sessionStorage.setItem('arcade-client',client);}});
+    socket.addEventListener('message',event=>{const msg=JSON.parse(event.data);if(msg.type==='switchGame' && msg.path!==location.pathname){location.assign(msg.path);return;}if(msg.type==='slushyState'){state=msg;render();}else if(msg.type==='slushyBest'){$('best').textContent=msg.best.toLocaleString();if(state)state.best=msg.best;}else if(msg.clientId){client=msg.clientId;sessionStorage.setItem('arcade-client',client);}});
     socket.addEventListener('close',()=>{held.clear();renderHeld();$('message').textContent='Connection lost. Your shift is paused; reconnecting…';$('start').disabled=true;$('reset').disabled=true;lanes.forEach(l=>l.querySelector('button').disabled=true);clearTimeout(reconnect);reconnect=setTimeout(connect,1000);});
   }
   document.querySelectorAll('.lever').forEach(button=>{
