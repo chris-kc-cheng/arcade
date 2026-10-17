@@ -1,7 +1,7 @@
 (() => {
   // One shared shell for the React entry points and the dependency-free game clients.
-  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab']];
-  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube'};
+  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush']];
+  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy'};
   const NativeWebSocket = window.WebSocket, logs = [];
   const totals = { SENT: { messages: 0, bytes: 0 }, RECEIVED: { messages: 0, bytes: 0 } };
   let currentSocket, currentHeader, players = [], online = false, connectionLabel = 'CONNECTING', debugPanel, logList, stats;
@@ -78,7 +78,7 @@
       const link = document.createElement('a'); link.href = path; link.title = label; link.setAttribute('aria-label', label); link.textContent = icon;
       const selected = path === (config.game === 'board' ? '/' : `/${config.game}`);
       if (selected) { link.className = 'active'; link.setAttribute('aria-current', 'page'); element.querySelector('.arcade-brand strong').textContent = label; }
-      link.onclick = event => { event.preventDefault(); if (online && confirm(`Switch everyone to ${label}?`)) send({type:'switchGame',path}); };
+      link.onclick = event => { if (path === '/slushy') return; if (config.game === 'slushy') { send({type:'switchGame',path}); return; } event.preventDefault(); if (online && confirm(`Switch everyone to ${label}?`)) send({type:'switchGame',path}); };
       nav.append(link);
     });
     const reset = existingReset || document.createElement('button'); reset.type = 'button'; reset.className = 'arcade-button arcade-reset'; reset.hidden = false;

@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-06T00:09:42.568Z",
+  "capturedAt": "2026-10-17T23:23:28.470Z",
   "method": "Chromium CDP, local server, 100% scale",
   "scenes": [
     {
@@ -49,6 +49,10 @@
           },
           {
             "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
             "current": null
           }
         ],
@@ -113,6 +117,10 @@
           {
             "href": "/cube",
             "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
           }
         ],
         "header": {
@@ -175,6 +183,10 @@
           },
           {
             "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
             "current": null
           }
         ],
@@ -239,6 +251,10 @@
           {
             "href": "/cube",
             "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
           }
         ],
         "header": {
@@ -301,6 +317,10 @@
           },
           {
             "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
             "current": null
           }
         ],
@@ -365,6 +385,10 @@
           {
             "href": "/cube",
             "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
           }
         ],
         "header": {
@@ -427,6 +451,10 @@
           },
           {
             "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
             "current": null
           }
         ],
@@ -491,6 +519,10 @@
           {
             "href": "/cube",
             "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
           }
         ],
         "header": {
@@ -554,6 +586,10 @@
           {
             "href": "/cube",
             "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
           }
         ],
         "header": {
@@ -616,6 +652,77 @@
           },
           {
             "href": "/cube",
+            "current": "page"
+          },
+          {
+            "href": "/slushy",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1905,
+          "height": 76,
+          "top": 0,
+          "right": 1905,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1905
+      }
+    },
+    {
+      "game": "slushy",
+      "route": "/slushy",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/slushy",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
             "current": "page"
           }
         ],

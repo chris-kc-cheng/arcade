@@ -63,6 +63,9 @@ const fighterEffects = [];
 const typingPlayers = new Map();
 let typingOrder = [], nextTypingNumber = 1, typingTimer;
 let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
+const slushy = require('./lib/slushy');
+const slushyGames = new Map();
+let slushyBest = 0;
 const wordleGames = new Map();
 const polls = new Map();
 
@@ -136,8 +139,8 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html']]);
 const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 let currentGamePath = '/';
 function cleanName(value) {
@@ -178,6 +181,7 @@ function registerPlatformSocket(socket, request, key, room) {
   socket.on('message', raw => {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (!message || typeof message !== 'object') return;
     if (message.type !== 'setName' || profile.customName) return;
     const name = cleanName(message.name);
     if (!name) return;
@@ -229,6 +233,7 @@ function attachPlatformMessages(socket) {
   socket.on('message', raw => {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (!message || typeof message !== 'object') return;
     if (message.type === 'switchGame' && gamePaths.has(message.path)) {
       currentGamePath = message.path;
       resetArcadeState();
@@ -978,6 +983,37 @@ function addCube(socket) {
   });
 }
 
+function addSlushy(socket, key) {
+  key = uniqueClientKey(slushyGames, key);
+  let record = slushyGames.get(key);
+  if (!record) { record = {game:slushy.newShift()}; slushyGames.set(key,record); }
+  clearTimeout(record.removeTimer);
+  record.socket=socket;
+  const send = () => { if(socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'slushyState',...record.game,best:slushyBest})); };
+  send();
+  socket.on('message',raw=>{
+    let input;try { input=slushy.cleanSlushyAction(JSON.parse(raw.toString())); } catch { return; }
+    if(!input) return;
+    slushy.action(record.game,input,Date.now());send();
+  });
+  let last=Date.now();
+  const timer=setInterval(()=>{
+    const now=Date.now();
+    // A disconnected player cannot continue pouring. Pause their private shift.
+    slushy.tick(record.game,Math.min(100,now-last),now);last=now;
+    const best=Math.max(slushyBest,record.game.score);
+    if(best !== slushyBest) {
+      slushyBest=best;
+      for(const peer of slushyGames.values()) if(peer.socket?.readyState===WebSocket.OPEN) peer.socket.send(JSON.stringify({type:'slushyBest',best}));
+    }
+    send();
+  },50);
+  socket.on('close',()=>{
+    clearInterval(timer);record.game.held.fill(0);record.socket=null;
+    record.removeTimer=setTimeout(()=>slushyGames.delete(key),DISCONNECT_GRACE_MS);
+  });
+}
+
 wss.on('connection', (socket, request) => {
   socket.isAlive = true;
   attachPlatformMessages(socket);
@@ -986,6 +1022,7 @@ wss.on('connection', (socket, request) => {
   const room = url.searchParams.get('room') || 'doodle';
   let key = clientKey(request);
   registerPlatformSocket(socket, request, key, room);
+  if (room === 'slushy') { addSlushy(socket, key); return; }
   if (room === 'cube') { addCube(socket); return; }
   if (room === 'tanks') {
     addTank(socket, key);
