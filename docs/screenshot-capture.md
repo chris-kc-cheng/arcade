@@ -51,3 +51,7 @@ Captures first go to temporary staging. The script checks dimensions, runtime ex
 Before committing, visually review every new PNG for clipping, loading or error states, useful gameplay, and readable navigation. The automatic checks cannot establish visual quality. If the browser is blocked, preserve the existing assets and report the blocker rather than changing the status to claim a refresh.
 
 `npm run screenshots:check` is browser-free. It checks the nine currently linked assets, a shared 16:9 source size, and identical 320×180 README thumbnail dimensions.
+
+## Slush Rush capture
+
+The capture suite now covers eleven games. Its Slush Rush scene starts a private shift, uses actual keyboard input to fill and serve three cups, then pours into the two newly unlocked cups. Score, cup size, fill volume and progression all come from the server. All eleven scenes were captured and checked successfully in Chromium in this environment, including a separate 390px mobile layout and spill/cleanup interaction check for Slush Rush.

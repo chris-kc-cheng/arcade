@@ -17,16 +17,16 @@
 | <img src="public/screenshots/typing.png" alt="Type/Off typing challenge screenshot" width="320" height="180"> | <img src="public/screenshots/wordle.png" alt="Many Words variable-length word game screenshot" width="320" height="180"> | <img src="public/screenshots/poll.png" alt="Quick Poll screenshot" width="320" height="180"> |
 | Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. | Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. | Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
 
-| Cube Lab |
-| --- |
-| <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> |
-| Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). |
+| Cube Lab | Slush Rush |
+| --- | --- |
+| <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> | <img src="public/screenshots/slushy.png" alt="Slush Rush cartoon slushy dispenser gameplay" width="320" height="180"> |
+| Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). | Pour four fruity flavors into S–XL cups in a private 60-second shift. Fill the dome for a bonus, avoid spills, and chase the shared best score. [Play Slush Rush](/slushy). |
 
 <!-- screenshot-status:start -->
-All ten previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
+All eleven previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
 <!-- screenshot-status:end -->
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, and live shareable Quick Polls. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, and the solo Slush Rush dispenser. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
@@ -41,7 +41,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 ### Visual assets
 
-Run `npm run screenshots:check` to verify all ten showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to ten PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+Run `npm run screenshots:check` to verify all eleven showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to eleven PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
 The shared browser and install icons come from `public/icons/arcade.svg`. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
@@ -163,3 +163,7 @@ Each deployment keeps the three most recent inactive releases under `HOSTINGER_D
 ## Cube Lab
 
 Open `/cube`. Click the six face grids to cycle white, red, green, yellow, orange, and blue. Centers remain fixed; view each face from outside with white on top and green in front. Start computes a two-phase solution on a server worker, validates color counts and physical solvability, and animates each turn. Pause, Next, Back, Scramble, and Reset synchronize for everyone in the cube room. View rotation is local. State is held in memory. The browser uses dependency-free CSS 3D; `cubejs` is used only on the server.
+
+## Slush Rush
+
+Open `/slushy` for a private 60-second slushy shift. Hold keys **1–4** or the matching dispenser levers with mouse/touch; release at the rim to serve automatically. S, M, L and XL cups have different fill times and point values. Clear domed lids hold another 24%: extra slush earns bonus points, but exceeding the dome spills the cup and triggers a cloth cleanup. The clock pauses during cleaning. Serve 3, 7 and 12 cups to unlock two, three and four simultaneous cups. Reset starts only your shift. Only the best score is shared, calculated by the server, and retained until the Node process restarts. Disconnected shifts pause and can reconnect within the normal 10-second grace period.
