@@ -17,58 +17,9 @@ const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) 
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
-const colors = ['#ff6b6b', '#5c7cfa', '#20c997', '#f59f00', '#cc5de8', '#12b886'];
-const users = new Map();
-const platformProfiles = new Map();
-const history = [];
-const chatHistory = [];
-let nextUserNumber = 1;
-const tankPlayers = new Map();
-const bullets = [];
-let nextTankNumber = 1;
-const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
-// Keep the whole tank, including its short cannon, clear of solid geometry.
-const tankRadius = 0.9;
-// The arena is generated once for this server-side match and remains authoritative.
-const tankObstacles = createTankObstacles();
-const penaltyClients = new Map();
-const penaltyPlayers = [];
-const penaltyColors = ['#ed4f45', '#3b71e8'];
-const penaltyZones = new Set(['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right']);
-let nextPenaltyNumber = 1;
-let penaltyStartingKicker = 0;
-let penaltyGame = createPenaltyGame();
-
-function createPenaltyGame() {
-  return { phase: 'waiting', kicker: penaltyStartingKicker, kicks: [[], []], choices: {}, result: null, winner: null, message: 'Waiting for two players' };
-}
-const fighters = new Map();
-let fighterOrder = [];
-let nextFighterNumber = 1;
-let fighterRound = 1;
-let fighterRoundEndsAt = 0;
-let fighterNotice = '';
-const bigTwoPlayers = new Map();
-let bigTwoOrder = [], nextBigTwoNumber = 1, bigTwoRound = 0;
-let bigTwoGame = { status: 'waiting', turn: '', trick: null, passes: [], openingCard: '', notice: 'Waiting for players' };
-const bigTwoCpus = Array.from({ length: 3 }, (_, index) => ({ id: `cpu-${index + 1}`, name: `CPU ${index + 1}`, computer: true, hand: [], score: 0 }));
-let bigTwoCpuTimer;
-const snakeClients = new Map();
-let nextSnakeNumber = 1;
-let snakeFood = { x: 18, y: 12 };
-let snakeRunning = false;
-let snakePaused = false;
-const snakeColors = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff70b7'];
-const fighterEffects = [];
-const typingPlayers = new Map();
-let typingOrder = [], nextTypingNumber = 1, typingTimer;
-let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
-const slushy = require('./lib/slushy');
-const slushyGames = new Map();
-let slushyBest = 0;
-const wordleGames = new Map();
-const polls = new Map();
-
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html']]);
+const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -130,7 +81,174 @@ if (developmentMode) {
   });
 }
 
+function segmentHitsBox(x1, z1, x2, z2, box, padding = 0) {
+  const minX = box.x - box.w / 2 - padding, maxX = box.x + box.w / 2 + padding;
+  const minZ = box.z - box.d / 2 - padding, maxZ = box.z + box.d / 2 + padding;
+  const dx = x2 - x1, dz = z2 - z1;
+  let enter = 0, exit = 1;
+  for (const [start, delta, min, max] of [[x1, dx, minX, maxX], [z1, dz, minZ, maxZ]]) {
+    if (Math.abs(delta) < 1e-9) { if (start < min || start > max) return false; continue; }
+    const a = (min - start) / delta, b = (max - start) / delta;
+    enter = Math.max(enter, Math.min(a, b));
+    exit = Math.min(exit, Math.max(a, b));
+    if (enter > exit) return false;
+  }
+  return true;
+}
+
+function segmentDistance(x1, z1, x2, z2, x, z) {
+  const dx = x2 - x1, dz = z2 - z1, lengthSquared = dx * dx + dz * dz;
+  const amount = lengthSquared ? Math.max(0, Math.min(1, ((x - x1) * dx + (z - z1) * dz) / lengthSquared)) : 0;
+  return Math.hypot(x - (x1 + dx * amount), z - (z1 + dz * amount));
+}
+
 const wss = new WebSocketServer({ server });
+const arcadeRooms = new Map();
+const sharedSlushy = { best: 0 };
+const ROOM_GRACE_MS = Math.max(100, Number(process.env.ROOM_GRACE_MS) || 10000);
+const adjectives = ['Cosmic', 'Frosty', 'Velvet', 'Neon', 'Sunny', 'Lucky', 'Electric', 'Mellow'];
+const nouns = ['Otters', 'Comets', 'Pandas', 'Mangos', 'Geckos', 'Fireflies', 'Penguins', 'Clouds'];
+function sendPacket(socket, packet) {
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(packet));
+}
+function broadcastSlushyBest(best) {
+  for (const socket of wss.clients) if (socket.gameRoom === 'slushy') sendPacket(socket, {type:'slushyBest', best});
+}
+function roomDirectory() {
+  return [...arcadeRooms.values()].filter(room => room.clients.size).map(room => ({id:room.id, name:room.name, path:room.path, players:room.clients.size}));
+}
+function broadcastRoomDirectory() {
+  const rooms = roomDirectory();
+  for (const socket of wss.clients) sendPacket(socket, {type:'arcadeRooms', currentRoom:socket.arcadeRoomId, rooms});
+}
+function scheduleRoomRemoval(room) {
+  clearTimeout(room.removeTimer);
+  room.removeTimer = setTimeout(() => {
+    if (room.clients.size) return;
+    room.engine?.dispose();
+    room.engine = null;
+    arcadeRooms.delete(room.id);
+    broadcastRoomDirectory();
+  }, ROOM_GRACE_MS);
+  room.removeTimer.unref();
+}
+function createArcadeRoom(path = '/') {
+  const id = crypto.randomUUID();
+  const name = `${adjectives[Math.floor(Math.random()*adjectives.length)]} ${nouns[Math.floor(Math.random()*nouns.length)]} ${id.slice(0,4).toUpperCase()}`;
+  const room = {id, name, path, clients:new Set(), engine:null};
+  arcadeRooms.set(id, room);
+  scheduleRoomRemoval(room);
+  return room;
+}
+wss.on('connection', (socket, request) => {
+  const url = new URL(request.url, 'http://localhost');
+  const requested = url.searchParams.get('arcade');
+  const initialPath = gamePaths.has(url.searchParams.get('game')) ? url.searchParams.get('game') : '/';
+  let room = arcadeRooms.get(requested);
+  if (!room) room = [...arcadeRooms.values()].find(candidate => candidate.clients.size) || createArcadeRoom(initialPath);
+  clearTimeout(room.removeTimer);
+  room.clients.add(socket);
+  socket.arcadeRoomId = room.id;
+  socket.gameRoom = url.searchParams.get('room') || 'doodle';
+  let lastCreate = 0;
+  socket.on('message', raw => {
+    let message; try { message = JSON.parse(raw.toString()); } catch { return; }
+    if (!message || typeof message !== 'object') return;
+    if (message.type === 'createRoom') {
+      if (Date.now()-lastCreate < 1000 || arcadeRooms.size >= 64) { sendPacket(socket,{type:'roomError',message:'Please wait before creating another room.'}); return; }
+      lastCreate = Date.now();
+      const created = createArcadeRoom(room.path);
+      sendPacket(socket,{type:'roomJoined',id:created.id,path:created.path});
+    } else if (message.type === 'joinRoom') {
+      if (typeof message.id !== 'string' || !arcadeRooms.has(message.id)) { sendPacket(socket,{type:'roomError',message:'That room has closed. Choose another room.'}); return; }
+      const target = arcadeRooms.get(message.id);
+      sendPacket(socket,{type:'roomJoined',id:target.id,path:target.path});
+    }
+  });
+  socket.on('close', () => {
+    room.clients.delete(socket);
+    if (!room.clients.size) scheduleRoomRemoval(room);
+    broadcastRoomDirectory();
+  });
+  if (!room.engine) room.engine = createGameRoom(room);
+  room.engine.connect(socket,request);
+  broadcastRoomDirectory();
+});
+wss.on('close', () => {
+  for (const room of arcadeRooms.values()) { clearTimeout(room.removeTimer); room.engine?.dispose(); }
+  arcadeRooms.clear();
+});
+
+// All game state and scheduled work belong to one named arcade room.
+function createGameRoom(arcadeRoom) {
+const room = arcadeRoom;
+const { EventEmitter } = require('node:events');
+const timers = require('node:timers');
+const pendingTimers = new Set();
+let disposed = false;
+function setTimeout(callback, ms, ...args) {
+  const handle = timers.setTimeout(() => { pendingTimers.delete(handle); if (!disposed) callback(...args); }, ms);
+  pendingTimers.add(handle); return handle;
+}
+function setInterval(callback, ms, ...args) {
+  const handle = timers.setInterval(() => { if (!disposed) callback(...args); }, ms);
+  pendingTimers.add(handle); return handle;
+}
+function clearTimeout(handle) { pendingTimers.delete(handle); timers.clearTimeout(handle); }
+function clearInterval(handle) { pendingTimers.delete(handle); timers.clearInterval(handle); }
+const wss = new EventEmitter();
+wss.clients = arcadeRoom.clients;
+const colors = ['#ff6b6b', '#5c7cfa', '#20c997', '#f59f00', '#cc5de8', '#12b886'];
+const users = new Map();
+const platformProfiles = new Map();
+const history = [];
+const chatHistory = [];
+let nextUserNumber = 1;
+const tankPlayers = new Map();
+const bullets = [];
+let nextTankNumber = 1;
+const tankColors = ['#d8ff3e', '#ff7149', '#55c8ff', '#ffce45', '#db70ff', '#54e0a5'];
+// Keep the whole tank, including its short cannon, clear of solid geometry.
+const tankRadius = 0.9;
+// The arena is generated once for this server-side match and remains authoritative.
+const tankObstacles = createTankObstacles();
+const penaltyClients = new Map();
+const penaltyPlayers = [];
+const penaltyColors = ['#ed4f45', '#3b71e8'];
+const penaltyZones = new Set(['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right']);
+let nextPenaltyNumber = 1;
+let penaltyStartingKicker = 0;
+let penaltyGame = createPenaltyGame();
+
+function createPenaltyGame() {
+  return { phase: 'waiting', kicker: penaltyStartingKicker, kicks: [[], []], choices: {}, result: null, winner: null, message: 'Waiting for two players' };
+}
+const fighters = new Map();
+let fighterOrder = [];
+let nextFighterNumber = 1;
+let fighterRound = 1;
+let fighterRoundEndsAt = 0;
+let fighterNotice = '';
+const bigTwoPlayers = new Map();
+let bigTwoOrder = [], nextBigTwoNumber = 1, bigTwoRound = 0;
+let bigTwoGame = { status: 'waiting', turn: '', trick: null, passes: [], openingCard: '', notice: 'Waiting for players' };
+const bigTwoCpus = Array.from({ length: 3 }, (_, index) => ({ id: `cpu-${index + 1}`, name: `CPU ${index + 1}`, computer: true, hand: [], score: 0 }));
+let bigTwoCpuTimer;
+const snakeClients = new Map();
+let nextSnakeNumber = 1;
+let snakeFood = { x: 18, y: 12 };
+let snakeRunning = false;
+let snakePaused = false;
+const snakeColors = ['#ccff38', '#ff5b4f', '#42d6ff', '#ffca45', '#c86bff', '#ff70b7'];
+const fighterEffects = [];
+const typingPlayers = new Map();
+let typingOrder = [], nextTypingNumber = 1, typingTimer;
+let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragraph: randomParagraph('easy'), countdownEndsAt: 0, startedAt: 0 };
+const slushy = require('./lib/slushy');
+const slushyGames = new Map();
+
+const wordleGames = new Map();
+const polls = new Map();
 
 function broadcast(message, except) {
   const payload = JSON.stringify(message);
@@ -139,10 +257,7 @@ function broadcast(message, except) {
   }
 }
 
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html']]);
-const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
-let currentGamePath = '/';
+let currentGamePath = room.path;
 function cleanName(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
 }
@@ -160,7 +275,7 @@ function nextAvailableUserName() {
 }
 
 function platformPresence() {
-  return [...platformProfiles.values()].filter(profile => profile.sockets.size).map(({ key, name, ip, connectedAt, room }) => ({ id: key, name, ip, connectedAt, room }));
+  return [...platformProfiles.values()].filter(profile => profile.sockets.size).map(({ key, name, ip, connectedAt, room }) => ({ id: key, name, ip, connectedAt, room, arcadeRoom: arcadeRoom.name }));
 }
 
 function broadcastPlatformPresence() {
@@ -235,7 +350,8 @@ function attachPlatformMessages(socket) {
     try { message = JSON.parse(raw.toString()); } catch { return; }
     if (!message || typeof message !== 'object') return;
     if (message.type === 'switchGame' && gamePaths.has(message.path)) {
-      currentGamePath = message.path;
+      currentGamePath = room.path = message.path;
+      broadcastRoomDirectory();
       resetArcadeState();
       broadcast({ type: 'switchGame', path: message.path });
     }
@@ -281,27 +397,6 @@ function randomSpawn() {
     if (!tankObstacles.some(box => Math.abs(point.x - box.x) < box.w / 2 + 3 && Math.abs(point.z - box.z) < box.d / 2 + 3)) return point;
   }
   return { x: 114, z: 114 };
-}
-
-function segmentHitsBox(x1, z1, x2, z2, box, padding = 0) {
-  const minX = box.x - box.w / 2 - padding, maxX = box.x + box.w / 2 + padding;
-  const minZ = box.z - box.d / 2 - padding, maxZ = box.z + box.d / 2 + padding;
-  const dx = x2 - x1, dz = z2 - z1;
-  let enter = 0, exit = 1;
-  for (const [start, delta, min, max] of [[x1, dx, minX, maxX], [z1, dz, minZ, maxZ]]) {
-    if (Math.abs(delta) < 1e-9) { if (start < min || start > max) return false; continue; }
-    const a = (min - start) / delta, b = (max - start) / delta;
-    enter = Math.max(enter, Math.min(a, b));
-    exit = Math.min(exit, Math.max(a, b));
-    if (enter > exit) return false;
-  }
-  return true;
-}
-
-function segmentDistance(x1, z1, x2, z2, x, z) {
-  const dx = x2 - x1, dz = z2 - z1, lengthSquared = dx * dx + dz * dz;
-  const amount = lengthSquared ? Math.max(0, Math.min(1, ((x - x1) * dx + (z - z1) * dz) / lengthSquared)) : 0;
-  return Math.hypot(x - (x1 + dx * amount), z - (z1 + dz * amount));
 }
 
 function tankBroadcast(message) {
@@ -989,7 +1084,7 @@ function addSlushy(socket, key) {
   if (!record) { record = {game:slushy.newShift()}; slushyGames.set(key,record); }
   clearTimeout(record.removeTimer);
   record.socket=socket;
-  const send = () => { if(socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'slushyState',...record.game,best:slushyBest})); };
+  const send = () => { if(socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'slushyState',...record.game,best:sharedSlushy.best})); };
   send();
   socket.on('message',raw=>{
     let input;try { input=slushy.cleanSlushyAction(JSON.parse(raw.toString())); } catch { return; }
@@ -1001,10 +1096,10 @@ function addSlushy(socket, key) {
     const now=Date.now();
     // A disconnected player cannot continue pouring. Pause their private shift.
     slushy.tick(record.game,Math.min(100,now-last),now);last=now;
-    const best=Math.max(slushyBest,record.game.score);
-    if(best !== slushyBest) {
-      slushyBest=best;
-      for(const peer of slushyGames.values()) if(peer.socket?.readyState===WebSocket.OPEN) peer.socket.send(JSON.stringify({type:'slushyBest',best}));
+    const best=Math.max(sharedSlushy.best,record.game.score);
+    if(best !== sharedSlushy.best) {
+      sharedSlushy.best=best;
+      broadcastSlushyBest(best);
     }
     send();
   },50);
@@ -1250,8 +1345,21 @@ heartbeat.unref();
 
 wss.on('close', () => { clearInterval(heartbeat); clearInterval(gameLoop); clearInterval(fighterLoop); clearInterval(snakeLoop); });
 
+
+return {
+  connect(socket, request) { wss.emit('connection', socket, request); },
+  dispose() {
+    disposed = true;
+    wss.emit('close');
+    stopCube();
+    for (const handle of pendingTimers) { timers.clearTimeout(handle); timers.clearInterval(handle); }
+    pendingTimers.clear();
+    wss.removeAllListeners();
+  }
+};
+}
+
 if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Doodle Together is live on http://localhost:${PORT}`));
 }
-
 module.exports = { server, wss, segmentHitsBox, segmentDistance };

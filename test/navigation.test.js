@@ -57,12 +57,13 @@ function platform(game = 'board', legacy = false) {
   const sent = [], prompts = [], sockets = [], timers = new Map(), storage = new Map(); let nextTimer = 0;
   class FakeSocket {
     static OPEN = 1;
-    constructor() { this.readyState = 0; this.listeners = {}; sockets.push(this); }
+    constructor(url) { this.url = url; this.readyState = 0; this.listeners = {}; sockets.push(this); }
     addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
     emit(type, event = {}) { if (type === 'open') this.readyState = 1; if (type === 'close') this.readyState = 3; this.listeners[type]?.forEach(callback => callback(event)); }
+    close() { this.emit('close'); }
     send(data) { sent.push(JSON.parse(data)); }
   }
-  const context = {document, WebSocket:FakeSocket, TextEncoder, Date, sessionStorage:{getItem:key => storage.get(key), setItem:(key,value) => storage.set(key,value)}, confirm:message => { prompts.push(message); return context.approve; }, approve:true, setInterval:callback => { timers.set(++nextTimer, callback); return nextTimer; }, clearInterval:id => timers.delete(id), ResizeObserver:class {observe() {} disconnect() {}}, location:{pathname:game === 'board' ? '/' : `/${game}`}};
+  const context = {URL, addEventListener(name, callback) { (document.listeners[name] ||= []).push(callback); }, document, WebSocket:FakeSocket, TextEncoder, Date, sessionStorage:{getItem:key => storage.get(key), setItem:(key,value) => storage.set(key,value)}, confirm:message => { prompts.push(message); return context.approve; }, approve:true, setInterval:callback => { timers.set(++nextTimer, callback); return nextTimer; }, clearInterval:id => timers.delete(id), ResizeObserver:class {observe() {} disconnect() {}}, location:{pathname:game === 'board' ? '/' : `/${game}`, assign(path) { this.assigned=path; }, reload() { this.reloaded=true; }}};
   context.window = context; vm.runInNewContext(fs.readFileSync(require.resolve('../public/platform.js'), 'utf8'), context);
   return {context, document, header, reset, sent, prompts, sockets, storage, timers, connect() { const socket = new context.WebSocket('ws://localhost/?room=test'); socket.emit('open'); return socket; }, packet(socket, message) { socket.emit('message',{data:JSON.stringify(message)}); }};
 }
@@ -158,4 +159,25 @@ test('shared styles neutralize legacy header layout and reserve responsive game 
   assert.match(css,/@media\(max-width:600px\)/);
   assert.match(css,/calc\(100dvh - var\(--arcade-topbar-height,76px\)\)/);
   assert.doesNotMatch(css,/platform-floating/);
+});
+
+
+test('room picker lists games and occupancy, creates and joins rooms, and remembers selection', () => {
+  const env=platform();const socket=env.connect();
+  env.packet(socket,{type:'arcadeRooms',currentRoom:'room-a',rooms:[{id:'room-a',name:'Frosty Otters',path:'/',players:2},{id:'room-b',name:'Neon Geckos',path:'/snake',players:1}]});
+  assert.equal(env.storage.get('arcade-room'),'room-a');
+  assert.equal(env.header.querySelector('.arcade-current-room').textContent,'Frosty Otters');
+  const options=env.header.querySelectorAll('.arcade-room-option');
+  assert.equal(options[0].disabled,true);assert.match(options[1].textContent,/Snake · 1 player/);
+  options[1].onclick();assert.deepEqual(env.sent.pop(),{type:'joinRoom',id:'room-b'});
+  env.header.querySelector('.arcade-create-room').onclick();assert.deepEqual(env.sent.pop(),{type:'createRoom'});
+  const next=env.connect();assert.equal(new URL(next.url).searchParams.get('arcade'),'room-a');
+  env.packet(next,{type:'roomJoined',id:'room-b',path:'/snake'});
+  assert.equal(env.storage.get('arcade-room'),'room-b');assert.equal(env.context.location.assigned,'/snake');
+});
+
+test('leaving a cached page closes its sockets so it cannot keep old rooms occupied', () => {
+  const env=platform(),socket=env.connect();
+  env.document.listeners.pagehide[0]();assert.equal(socket.readyState,3);
+  env.document.listeners.pageshow[0]({persisted:true});assert.equal(env.context.location.reloaded,true);
 });

@@ -2,8 +2,9 @@
   // One shared shell for the React entry points and the dependency-free game clients.
   const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush']];
   const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy'};
-  const NativeWebSocket = window.WebSocket, logs = [];
+  const NativeWebSocket = window.WebSocket, logs = [], pageSockets = new Set();
   const totals = { SENT: { messages: 0, bytes: 0 }, RECEIVED: { messages: 0, bytes: 0 } };
+  let directory = [], selectedRoom = sessionStorage.getItem('arcade-room') || '', roomError = '';
   let currentSocket, currentHeader, players = [], online = false, connectionLabel = 'CONNECTING', debugPanel, logList, stats;
   const display = data => { if (typeof data !== 'string') return `[binary data: ${data?.byteLength ?? data?.size ?? 'unknown'} bytes]`; try { return JSON.stringify(JSON.parse(data), null, 2); } catch { return data; } };
   const byteSize = data => typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data?.byteLength ?? data?.size ?? 0;
@@ -36,20 +37,39 @@
   }
   class DebugWebSocket extends NativeWebSocket {
     constructor(url, protocols) {
-      super(url, protocols); this.arcadeDebugUrl = String(url);
+      const address = new URL(String(url));
+      if (selectedRoom) address.searchParams.set('arcade', selectedRoom);
+      address.searchParams.set('game', location.pathname);
+      super(address.toString(), protocols); this.arcadeDebugUrl = address.toString();
+      pageSockets.add(this);
       currentSocket = this; online = false; connectionLabel = 'CONNECTING'; players = []; currentHeader?.render();
       this.addEventListener('open', () => { if (currentSocket === this) { online = true; connectionLabel = 'LIVE'; currentHeader?.render(); } });
-      this.addEventListener('close', () => { if (currentSocket === this) { online = false; connectionLabel = 'OFFLINE'; players = []; currentHeader?.render(); } });
+      this.addEventListener('close', () => { pageSockets.delete(this); if (currentSocket === this) { online = false; connectionLabel = 'OFFLINE'; players = []; currentHeader?.render(); } });
       this.addEventListener('message', event => {
         record('RECEIVED', event.data, this.arcadeDebugUrl);
         if (currentSocket !== this) return;
         let message; try { message = JSON.parse(event.data); } catch { return; }
+        if (message.type === 'arcadeRooms') {
+          directory = Array.isArray(message.rooms) ? message.rooms : [];
+          selectedRoom = message.currentRoom || '';
+          sessionStorage.setItem('arcade-room', selectedRoom);
+          currentHeader?.render();
+        }
+        if (message.type === 'roomJoined' && typeof message.id === 'string' && games.some(([path]) => path === message.path)) {
+          sessionStorage.setItem('arcade-room', message.id);
+          if (location.pathname === message.path) location.reload(); else location.assign(message.path);
+        }
+        if (message.type === 'roomError') { roomError = message.message; currentHeader?.render(); }
         if (message.type === 'platformPresence') { players = Array.isArray(message.players) ? message.players : []; currentHeader?.render(); }
       });
     }
     send(data) { super.send(data); record('SENT', data, this.arcadeDebugUrl); }
   }
   window.WebSocket = DebugWebSocket;
+  // Close connections before a page enters the browser's back/forward cache.
+  // Otherwise an invisible old page can keep its previous room occupied.
+  window.addEventListener('pagehide', () => { for (const socket of pageSockets) socket.close(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
   function createDebugger() {
     if (debugPanel) return;
     debugPanel = document.createElement('aside'); debugPanel.id = 'arcade-debug-panel'; debugPanel.className = 'arcade-debug-panel'; debugPanel.hidden = true; debugPanel.setAttribute('aria-label', 'WebSocket debug log');
@@ -72,13 +92,13 @@
     const config = {...options}, existingReset = element.querySelector('#reset, #resetButton');
     element.className = 'arcade-topbar'; element.dataset.arcadeGame = config.game;
     element.setAttribute('aria-label', 'Arcade navigation and shared controls');
-    element.innerHTML = '<div class="arcade-brand"><span>ARCADE</span><strong></strong></div><nav class="arcade-nav" aria-label="Arcade games"></nav><div class="arcade-controls"><form class="arcade-name" aria-label="Session username"><input maxlength="24" autocomplete="off" aria-label="Username" placeholder="Your name"><button type="submit" class="arcade-button" aria-label="Save username" title="Save username">✓</button></form><div class="arcade-presence"><button type="button" class="arcade-button arcade-presence-toggle" aria-expanded="false" aria-controls="arcade-player-details"><strong>0</strong> ACTIVE <span class="arcade-room-count">0 HERE</span></button><div id="arcade-player-details" class="arcade-player-details" role="region" aria-label="Connected player details" tabindex="0" hidden><div>No active players</div></div></div><div class="arcade-connection" role="status"><i></i><span>CONNECTING</span></div><button type="button" class="arcade-button arcade-debug-toggle" aria-expanded="false" aria-controls="arcade-debug-panel">DEBUG</button></div>';
+    element.innerHTML = '<div class="arcade-brand"><span>ARCADE</span><strong></strong></div><nav class="arcade-nav" aria-label="Arcade games"></nav><div class="arcade-controls"><details class="arcade-rooms"><summary aria-label="Choose arcade room">ROOMS <span class="arcade-current-room">CONNECTING</span></summary><div class="arcade-room-menu"><strong>ARCADE ROOMS</strong><p>Game changes stay in your room.</p><div class="arcade-room-list"></div><button type="button" class="arcade-button arcade-create-room">+ NEW ROOM</button><p class="arcade-room-error" role="status"></p></div></details><form class="arcade-name" aria-label="Session username"><input maxlength="24" autocomplete="off" aria-label="Username" placeholder="Your name"><button type="submit" class="arcade-button" aria-label="Save username" title="Save username">✓</button></form><div class="arcade-presence"><button type="button" class="arcade-button arcade-presence-toggle" aria-expanded="false" aria-controls="arcade-player-details"><strong>0</strong> ACTIVE <span class="arcade-room-count">0 HERE</span></button><div id="arcade-player-details" class="arcade-player-details" role="region" aria-label="Connected player details" tabindex="0" hidden><div>No active players</div></div></div><div class="arcade-connection" role="status"><i></i><span>CONNECTING</span></div><button type="button" class="arcade-button arcade-debug-toggle" aria-expanded="false" aria-controls="arcade-debug-panel">DEBUG</button></div>';
     const nav = element.querySelector('.arcade-nav'), controls = element.querySelector('.arcade-controls'), debugToggle = element.querySelector('.arcade-debug-toggle');
     games.forEach(([path, icon, label]) => {
       const link = document.createElement('a'); link.href = path; link.title = label; link.setAttribute('aria-label', label); link.textContent = icon;
       const selected = path === (config.game === 'board' ? '/' : `/${config.game}`);
       if (selected) { link.className = 'active'; link.setAttribute('aria-current', 'page'); element.querySelector('.arcade-brand strong').textContent = label; }
-      link.onclick = event => { if (path === '/slushy') return; if (config.game === 'slushy') { send({type:'switchGame',path}); return; } event.preventDefault(); if (online && confirm(`Switch everyone to ${label}?`)) send({type:'switchGame',path}); };
+      link.onclick = event => { event.preventDefault(); const name = directory.find(room => room.id === selectedRoom)?.name || 'this room'; if (online && confirm(`Switch everyone in ${name} to ${label}?`)) send({type:'switchGame',path}); };
       nav.append(link);
     });
     const reset = existingReset || document.createElement('button'); reset.type = 'button'; reset.className = 'arcade-button arcade-reset'; reset.hidden = false;
@@ -91,6 +111,27 @@
       if (!name || sessionStorage.getItem('arcade-name') || !send({type:'setName',name})) return;
       sessionStorage.setItem('arcade-name', name); nameInput.value = name; render();
     };
+    const roomPicker = element.querySelector('.arcade-rooms');
+    const roomList = element.querySelector('.arcade-room-list');
+    const createRoom = element.querySelector('.arcade-create-room');
+    createRoom.onclick = () => { roomError = ''; send({type:'createRoom'}); };
+    function renderRooms() {
+      const current = directory.find(room => room.id === selectedRoom);
+      element.querySelector('.arcade-current-room').textContent = current?.name || 'CONNECTING';
+      createRoom.disabled = !online;
+      element.querySelector('.arcade-room-error').textContent = roomError;
+      roomList.replaceChildren(...directory.map(room => {
+        const button = document.createElement('button'); button.type = 'button';
+        button.className = 'arcade-room-option'; button.disabled = !online || room.id === selectedRoom;
+        if (room.id === selectedRoom) button.setAttribute('aria-current','true');
+        const name = document.createElement('strong'), detail = document.createElement('span');
+        name.textContent = room.name;
+        const game = games.find(([path]) => path === room.path)?.[2] || 'Arcade';
+        detail.textContent = `${game} · ${room.players} player${room.players === 1 ? '' : 's'}${room.id === selectedRoom ? ' · YOU ARE HERE' : ' · JOIN →'}`;
+        button.append(name,detail); button.onclick = () => { roomError = ''; send({type:'joinRoom',id:room.id}); };
+        return button;
+      }));
+    }
     const presence = element.querySelector('.arcade-presence'), presenceToggle = element.querySelector('.arcade-presence-toggle'), details = element.querySelector('.arcade-player-details');
     let pinned = false, hovering = false;
     function showPresence(open) { details.hidden = !open; presenceToggle.setAttribute('aria-expanded', String(open)); }
@@ -103,10 +144,10 @@
       const roomPlayers = players.filter(player => player.room === rooms[config.game]), count = online ? config.roomCount ?? roomPlayers.length : 0;
       presenceToggle.querySelector('strong').textContent = players.length;
       presenceToggle.querySelector('.arcade-room-count').textContent = `${count} HERE`;
-      presenceToggle.setAttribute('aria-label', `${players.length} active players across Arcade, ${count} connected to this room. Show player details`);
+      presenceToggle.setAttribute('aria-label', `${players.length} active players in this arcade room, ${count} connected to this room. Show player details`);
       details.replaceChildren(...(players.length ? players.map(player => {
         const row = document.createElement('div'), name = document.createElement('b'), info = document.createElement('span');
-        name.textContent = player.name; info.textContent = `${player.ip} · ${player.room} · connected ${elapsed(player.connectedAt)} ago`; row.append(name, info); return row;
+        name.textContent = player.name; info.textContent = `${player.ip} · ${player.arcadeRoom ? `${player.arcadeRoom} / ` : ''}${player.room} · connected ${elapsed(player.connectedAt)} ago`; row.append(name, info); return row;
       }) : [Object.assign(document.createElement('div'), {textContent:'No active players'})]));
     }
     function render() {
@@ -118,13 +159,13 @@
       if (!existingReset) reset.disabled = !online || config.resetDisabled !== false;
       else if (!online) reset.disabled = true;
       if (config.resetDisabled) reset.title = 'Only an active participant can reset this game'; else reset.removeAttribute('title');
-      renderPresence();
+      renderPresence(); renderRooms();
     }
     createDebugger(); debugToggle.onclick = () => setDebugOpen(debugPanel.hidden);
     const resize = () => document.documentElement.style.setProperty('--arcade-topbar-height', `${Math.ceil(element.getBoundingClientRect().height)}px`);
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     const timer = setInterval(() => { if (!details.hidden) renderPresence(); }, 1000);
-    const api = {element, render, update(next) { Object.assign(config, next); render(); }, closePresence() { pinned = false; if (details.contains(document.activeElement)) presenceToggle.focus(); showPresence(false); }, destroy() { clearInterval(timer); observer.disconnect(); if (currentHeader === api) { setDebugOpen(false, false); currentHeader = null; } }};
+    const api = {element, render, update(next) { Object.assign(config, next); render(); }, closePresence() { roomPicker.removeAttribute('open'); pinned = false; if (details.contains(document.activeElement)) presenceToggle.focus(); showPresence(false); }, destroy() { clearInterval(timer); observer.disconnect(); if (currentHeader === api) { setDebugOpen(false, false); currentHeader = null; } }};
     currentHeader = api; render(); return api;
   }
   window.ArcadePlatform = {mount, send, isInteractiveTarget, setRoomCount(count) { currentHeader?.update({roomCount:count}); }};
