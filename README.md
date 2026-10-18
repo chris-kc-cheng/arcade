@@ -43,7 +43,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 Run `npm run screenshots:check` to verify all eleven showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to eleven PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
-The shared browser and install icons come from `public/icons/arcade.svg`. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
+A cute lime-green gecko unifies the navigation bar, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
 ## How HTTPS and WebSockets work
 
