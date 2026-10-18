@@ -70,8 +70,8 @@ test('manifest is one root-scoped Arcade app with real 192 and 512 pixel icons',
   assert.equal(manifest.scope, '/');
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.background_color, '#141824');
-  assert.equal(manifest.theme_color, '#141824');
+  assert.equal(manifest.background_color, '#0f2723');
+  assert.equal(manifest.theme_color, '#0f2723');
   for (const purpose of ['any', 'maskable']) {
     for (const size of [192, 512]) {
       const icon = manifest.icons.find(icon => icon.purpose === purpose && icon.sizes === `${size}x${size}`);
@@ -92,7 +92,7 @@ test('maskable artwork is opaque and stays within the central 80% safe circle', 
       for (let x = 0; x < width; x++) {
         const offset = (y * width + x) * 4;
         assert.equal(pixels[offset + 3], 255, `${icon.src} has an opaque background`);
-        const isBackground = pixels[offset] === 20 && pixels[offset + 1] === 24 && pixels[offset + 2] === 36;
+        const isBackground = pixels[offset] === 15 && pixels[offset + 1] === 39 && pixels[offset + 2] === 35;
         if (!isBackground) {
           artworkPixels++;
           const distance = Math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2);
@@ -122,7 +122,12 @@ test('Apple touch icon is opaque at 180px and ICO contains 16/32/48px images', (
     assert.equal(frame.width, size);
     assert.equal(frame.height, size);
   }
-  assert.deepEqual(read('favicon.svg'), read('icons/arcade.svg'), 'favicon uses the maintained source artwork');
+  assert.match(read('icons/arcade.svg').toString(), /href="gecko-source\.png"/, 'source uses the maintained gecko artwork');
+  const favicon = read('favicon.svg').toString();
+  assert.match(favicon, /Arcade gecko/);
+  const embedded = favicon.match(/href="data:image\/png;base64,([^"]+)"/);
+  assert.ok(embedded, 'SVG favicon embeds its artwork without an external image request');
+  assert.equal(pngPixels(Buffer.from(embedded[1], 'base64')).width, 256);
 });
 
 test('HTTP serves the manifest and icon formats with their correct content types', async t => {
