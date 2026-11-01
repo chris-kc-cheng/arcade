@@ -3,12 +3,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction, cleanPollAction } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction, cleanTypoAction, cleanPollAction } = require('./lib/protocol');
 const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
 const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
 const { words: wordleWords, scoreGuess, letterStatuses, randomWord } = require('./lib/wordle');
+
+const typoHunt = require('./lib/typohunt');
+const { createAppDirectory } = require('./lib/apps');
 
 const { Worker } = require('node:worker_threads');
 const { Cube, faces: cubeFaces, solved: solvedCube, validate: validateCube, cleanAction: cleanCubeAction } = require('./lib/cube');
@@ -17,8 +20,8 @@ const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) 
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy', '/typohunt']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html'], ['/typohunt', 'typohunt.html']]);
 const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -30,11 +33,23 @@ const contentTypes = {
   '.webmanifest': 'application/manifest+json'
 };
 
+const appDirectory = createAppDirectory();
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+  if (pathname === '/api/apps') {
+    // The shared Hedgies app list for the top-bar app switcher, read live and served from this origin so browsers need no CORS.
+    appDirectory.list().then(apps => {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(apps));
+    }, () => {
+      res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'The app list is unavailable.' }));
+    });
     return;
   }
   if (developmentMode && pathname === '/__dev_reload') {
@@ -247,6 +262,9 @@ let typingGame = { phase: 'waiting', mode: 'versus', difficulty: 'easy', paragra
 const slushy = require('./lib/slushy');
 const slushyGames = new Map();
 
+const typoPlayers = new Map();
+let typoOrder = [], nextTypoNumber = 1, typoTimer;
+const typoGame = typoHunt.newGame();
 const wordleGames = new Map();
 const polls = new Map();
 
@@ -1078,6 +1096,64 @@ function addCube(socket) {
   });
 }
 
+function activeTypoPlayers() { return typoOrder.slice(0, typoHunt.MAX_PLAYERS).map(key => typoPlayers.get(key)).filter(Boolean); }
+function broadcastTypoHunt() {
+  const now = Date.now(), active = activeTypoPlayers(), game = typoHunt.publicGame(typoGame, now);
+  // The live ranking: every connected hunter in the room, best score first.
+  const players = active.filter(player => player.socket?.readyState === WebSocket.OPEN).map(typoHunt.publicPlayer).sort((a, b) => b.score - a.score || b.found - a.found || a.name.localeCompare(b.name));
+  for (const viewer of typoPlayers.values()) if (viewer.socket?.readyState === WebSocket.OPEN) {
+    viewer.socket.send(JSON.stringify({ type: 'typoState', ...game, selfId: viewer.id, role: active.includes(viewer) ? 'player' : 'spectator', players, spectators: Math.max(0, typoOrder.length - active.length) }));
+  }
+}
+// Each phase change schedules the next one on the server clock, so every client sees the same countdown and deadline.
+// A finished round waits: nobody is moved on until an active player asks for the next question.
+function scheduleTypoHunt() {
+  clearTimeout(typoTimer);
+  const now = Date.now();
+  if (typoGame.phase === 'countdown') typoTimer = setTimeout(() => { if (typoHunt.beginHunt(typoGame, Date.now())) { scheduleTypoHunt(); broadcastTypoHunt(); } }, Math.max(0, typoGame.countdownEndsAt - now));
+  else if (typoGame.phase === 'hunting') typoTimer = setTimeout(() => { if (typoHunt.endHunt(typoGame)) broadcastTypoHunt(); }, Math.max(0, typoGame.endsAt - now));
+  typoTimer?.unref?.();
+}
+function restartTypoHunt(level = typoGame.level, keepScores = false) {
+  typoHunt.startRound(typoGame, activeTypoPlayers(), Date.now(), level, { keepScores });
+  scheduleTypoHunt(); broadcastTypoHunt();
+}
+function addTypoHunt(socket, key) {
+  key = uniqueClientKey(typoPlayers, key);
+  let player = typoPlayers.get(key);
+  if (player) { clearTimeout(player.removeTimer); player.removeTimer = null; player.socket = socket; }
+  else {
+    const number = nextTypoNumber++;
+    player = typoHunt.newPlayer(key, `hunter-${number}`, profileName(socket) || `Hunter ${number}`);
+    player.socket = socket;
+    typoPlayers.set(key, player); typoOrder.push(key);
+  }
+  socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
+  if (typoGame.phase === 'waiting') restartTypoHunt(typoGame.level, true); else broadcastTypoHunt();
+  socket.on('message', raw => {
+    if (player.socket !== socket) return;
+    let source; try { source = JSON.parse(raw.toString()); } catch { return; }
+    if (!source || typeof source !== 'object') return;
+    if (source.type === 'setName') { const name = profileName(socket); if (name) { player.name = name; broadcastTypoHunt(); } return; }
+    const message = cleanTypoAction(source);
+    // Spectators (beyond the room's player cap) watch only: they can neither pick words nor reset the hunt.
+    if (!message || !activeTypoPlayers().includes(player)) return;
+    if (message.type === 'reset') { restartTypoHunt(typoGame.level, false); return; }
+    if (message.type === 'level') { restartTypoHunt(message.level, false); return; }
+    if (message.type === 'skip') { if (typoHunt.skip(typoGame)) { scheduleTypoHunt(); broadcastTypoHunt(); } return; }
+    if (message.type === 'next') { if (typoGame.phase === 'finished') restartTypoHunt(typoGame.level, true); return; }
+    const result = typoHunt.pick(typoGame, player, message.index, Date.now());
+    if (!result.ok) return;
+    if (typoGame.phase === 'finished') scheduleTypoHunt();
+    broadcastTypoHunt();
+  });
+  socket.on('close', () => {
+    if (player.socket !== socket) return;
+    player.socket = null; broadcastTypoHunt();
+    scheduleRemoval(player, () => { typoPlayers.delete(key); typoOrder = typoOrder.filter(item => item !== key); broadcastTypoHunt(); });
+  });
+}
+
 function addSlushy(socket, key) {
   key = uniqueClientKey(slushyGames, key);
   let record = slushyGames.get(key);
@@ -1118,6 +1194,7 @@ wss.on('connection', (socket, request) => {
   let key = clientKey(request);
   registerPlatformSocket(socket, request, key, room);
   if (room === 'slushy') { addSlushy(socket, key); return; }
+  if (room === 'typohunt') { addTypoHunt(socket, key); return; }
   if (room === 'cube') { addCube(socket); return; }
   if (room === 'tanks') {
     addTank(socket, key);

@@ -70,3 +70,17 @@ header.arcade-topbar .arcade-nav a[aria-current=page]{border-radius:12px 12px 12
 @media(max-width:1550px){header.arcade-topbar{grid-template-columns:165px minmax(0,1fr)!important}}
 @media(min-width:1551px) and (max-width:1700px){header.arcade-topbar .arcade-brand{flex-basis:145px}}
 @media(max-width:600px){header.arcade-topbar{grid-template-columns:minmax(0,1fr)!important}header.arcade-topbar .arcade-brand{grid-template-columns:34px minmax(0,1fr) auto;grid-template-rows:auto;gap:9px}header.arcade-topbar .arcade-mascot{width:34px!important;height:34px!important;grid-row:1}header.arcade-topbar .arcade-brand>span{grid-column:2;align-self:center}header.arcade-topbar .arcade-brand>strong{grid-column:3;align-self:center;max-width:160px}}
+
+/* App switcher: the last control in the top bar, a 3x3 dot grid that opens the live Hedgies app list. */
+header.arcade-topbar .arcade-apps{position:relative;flex:0 0 auto}
+header.arcade-topbar .arcade-apps-toggle{width:34px!important;padding:0!important;display:inline-grid!important;grid-template-columns:repeat(3,4px);grid-auto-rows:4px;gap:3px;place-content:center}
+header.arcade-topbar .arcade-apps-toggle i{display:block;width:4px;height:4px;border-radius:50%;background:currentColor}
+header.arcade-topbar .arcade-apps-toggle[aria-expanded=true]{background:#b9f36b!important;color:#0f2723!important;border-color:#b9f36b!important}
+header.arcade-topbar .arcade-apps-menu{position:absolute;right:0;top:calc(100% + 10px);z-index:5;display:grid;grid-template-columns:repeat(3,92px);gap:6px;max-height:70vh;overflow:auto;padding:10px;background:#12312b;border:1px solid #567863;border-radius:14px;box-shadow:0 12px 30px #0009}
+header.arcade-topbar .arcade-apps-menu.arcade-apps-status{display:block;width:210px;padding:14px;font:400 11px/1.5 'DM Mono',monospace;color:#adbea5}
+header.arcade-topbar .arcade-app-tile{display:grid;justify-items:center;gap:6px;padding:10px 4px;border-radius:10px;color:#f2f8e7;font:500 11px/1.25 'DM Mono',monospace;text-align:center;text-decoration:none;overflow-wrap:anywhere}
+header.arcade-topbar .arcade-app-tile img{border-radius:12px;background:#0f2723}
+header.arcade-topbar .arcade-app-tile:hover,header.arcade-topbar .arcade-app-tile:focus-visible{background:#24483b}
+header.arcade-topbar .arcade-app-letter{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:#24483b;color:#b9f36b;font:700 22px/1 'DM Mono',monospace}
+header.arcade-topbar .arcade-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media(max-width:600px){header.arcade-topbar .arcade-apps{position:static}header.arcade-topbar .arcade-apps-menu{position:fixed;top:var(--arcade-topbar-height,240px);left:12px;right:12px;grid-template-columns:repeat(3,1fr)}header.arcade-topbar .arcade-apps-menu.arcade-apps-status{width:auto}}

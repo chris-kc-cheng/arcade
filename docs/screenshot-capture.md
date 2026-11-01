@@ -54,4 +54,15 @@ Before committing, visually review every new PNG for clipping, loading or error 
 
 ## Slush Rush capture
 
-The capture suite now covers eleven games. Its Slush Rush scene starts a private shift, uses actual keyboard input to fill and serve three cups, then pours into the two newly unlocked cups. Score, cup size, fill volume and progression all come from the server. All eleven scenes were captured and checked successfully in Chromium in this environment, including a separate 390px mobile layout and spill/cleanup interaction check for Slush Rush.
+The capture suite now covers twelve games. Its Slush Rush scene starts a private shift, sends real 1–4 key events to the page to fill and serve three cups, then pours into the two newly unlocked cups. Score, cup size, fill volume and progression all come from the server. All twelve scenes were captured and checked successfully in Chromium in this environment, including a separate 390px mobile layout and spill/cleanup interaction check for Slush Rush.
+
+## Typo Hunt capture
+
+The Typo Hunt scene switches the room to level 5 and waits for the countdown. Three synthetic hunters then act through the real WebSocket protocol: the page's own player finds two mistakes, Sam finds one, and Jo makes one wrong guess, so the shot shows found words with their fixes, an unmarked wrong guess, a three-way live ranking and the clock. The scene locates the mistakes by comparing each sentence with the clean bank in `lib/typohunt.js`; the server still decides every score.
+
+## Capture notes
+
+- Every scene runs in its own freshly created arcade room, and the capture tab and its peers are told that room explicitly, so a previous scene's closing tab can never leak into the next one.
+- On Windows set `CHROME_BIN` to the browser executable (for example `C:\Program Files\Google\Chrome\Application\chrome.exe`); `which` is not available there.
+- `CAPTURE_ONLY=typohunt,slushy npm run screenshots` captures just those scenes into a temporary preview folder (printed at the end, or set `CAPTURE_PREVIEW_DIR`) without touching the repository, which is handy for reviewing one scene.
+- The app switcher button appears in every top bar, so all twelve captures were refreshed together.
