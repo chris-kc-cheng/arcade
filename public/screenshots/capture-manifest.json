@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-18T00:58:22.247Z",
+  "capturedAt": "2026-11-01T18:09:20.449Z",
   "method": "Chromium CDP, local server, 100% scale",
   "scenes": [
     {
@@ -53,6 +53,10 @@
           },
           {
             "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
             "current": null
           }
         ],
@@ -121,6 +125,10 @@
           {
             "href": "/slushy",
             "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -187,6 +195,10 @@
           },
           {
             "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
             "current": null
           }
         ],
@@ -255,6 +267,10 @@
           {
             "href": "/slushy",
             "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -321,6 +337,10 @@
           },
           {
             "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
             "current": null
           }
         ],
@@ -389,6 +409,10 @@
           {
             "href": "/slushy",
             "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -455,6 +479,10 @@
           },
           {
             "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
             "current": null
           }
         ],
@@ -523,6 +551,10 @@
           {
             "href": "/slushy",
             "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -589,6 +621,10 @@
           },
           {
             "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
             "current": null
           }
         ],
@@ -657,6 +693,10 @@
           {
             "href": "/slushy",
             "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -724,6 +764,10 @@
           {
             "href": "/slushy",
             "current": "page"
+          },
+          {
+            "href": "/typohunt",
+            "current": null
           }
         ],
         "header": {
@@ -737,6 +781,77 @@
           "left": 0
         },
         "scrollWidth": 1905
+      }
+    },
+    {
+      "game": "typohunt",
+      "route": "/typohunt",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/typohunt",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": "page"
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 76,
+          "top": 0,
+          "right": 1920,
+          "bottom": 76,
+          "left": 0
+        },
+        "scrollWidth": 1920
       }
     }
   ]

@@ -17,16 +17,16 @@
 | <img src="public/screenshots/typing.png" alt="Type/Off typing challenge screenshot" width="320" height="180"> | <img src="public/screenshots/wordle.png" alt="Many Words variable-length word game screenshot" width="320" height="180"> | <img src="public/screenshots/poll.png" alt="Quick Poll screenshot" width="320" height="180"> |
 | Race head-to-head with karaoke-style feedback, three difficulties, and detailed results. | Play a private Wordle-style puzzle with two- through eight-letter words, including all 14,855 accepted five-letter Wordle guesses. | Create a live multiple-choice poll, share it by QR code, and reveal synchronized results. |
 
-| Cube Lab | Slush Rush |
-| --- | --- |
-| <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> | <img src="public/screenshots/slushy.png" alt="Slush Rush cartoon slushy dispenser gameplay" width="320" height="180"> |
-| Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). | Pour four fruity flavors into S–XL cups in a private 60-second shift. Fill the dome for a bonus, avoid spills, and chase the shared best score. [Play Slush Rush](/slushy). |
+| Cube Lab | Slush Rush | Typo Hunt |
+| --- | --- | --- |
+| <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> | <img src="public/screenshots/slushy.png" alt="Slush Rush cartoon slushy dispenser gameplay" width="320" height="180"> | <img src="public/screenshots/typohunt.png" alt="Typo Hunt spelling and grammar race with a live ranking screenshot" width="320" height="180"> |
+| Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). | Pour four fruity flavors into S–XL cups in a private 60-second shift. Fill the dome for a bonus, avoid spills, and chase the shared best score. [Play Slush Rush](/slushy). | A proofreading race: the whole room hunts the same spelling and grammar mistakes across five levels, with a live ranking. [Play Typo Hunt](/typohunt). |
 
 <!-- screenshot-status:start -->
-All eleven previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
+All twelve previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
 <!-- screenshot-status:end -->
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, and the solo Slush Rush dispenser. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, the solo Slush Rush dispenser, and the shared Typo Hunt proofreading game, with an app switcher to the other Hedgies apps. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
@@ -41,7 +41,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 ### Visual assets
 
-Run `npm run screenshots:check` to verify all eleven showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to eleven PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+Run `npm run screenshots:check` to verify all twelve showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to twelve PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
 A cute lime-green gecko unifies the navigation bar, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
@@ -167,6 +167,22 @@ Open `/cube`. Click the six face grids to cycle white, red, green, yellow, orang
 ## Slush Rush
 
 Open `/slushy` for a private 60-second slushy shift. Hold keys **1–4** or the matching dispenser levers with mouse/touch; release at the rim to serve automatically. S, M, L and XL cups have different fill times and point values. Clear domed lids hold another 24%: extra slush earns bonus points, but exceeding the dome spills the cup and triggers a cloth cleanup. The clock pauses during cleaning. Serve 3, 7 and 12 cups to unlock two, three and four simultaneous cups. Reset starts only your shift. Only the best score is shared, calculated by the server, and retained until the Node process restarts. Disconnected shifts pause and can reconnect within the normal 10-second grace period.
+
+## Typo Hunt
+
+Open `/typohunt`. Everyone in the same arcade room races on the same passage: only the wrong version is shown (no original to compare), and the first player to click a mistake scores it. Mistakes are common spelling and grammar slips: misspellings such as *definately* or *recieve*, mixed-up words (*there/their*, *loose/lose*, *its/it's*), *could of*, *a/an*, and subject-verb agreement.
+
+- **Five levels.** Level *n* hides *n* mistakes. Level 1 is one short sentence (45 s); level 5 is a six-sentence paragraph with five mistakes (2 min). Any player can pick the level, which restarts the round for the whole room.
+- **1,500 questions, built without an LLM.** `lib/typohunt-bank.json` holds a fixed bank per level: **500** at level 1, **400** at level 2, **300** at level 3, **200** at level 4 and **100** at level 5. Questions are dealt in a shuffled order, so none repeats until a level's whole bank has been seen. They are produced by plain rules in `lib/typohunt.js`: clean sentences (about 500 short ones, expanded from slotted templates such as "It's too {adj} to {verb}", plus 28 longer ones, with random names) get a few words swapped for a known wrong form from a table of about 180 patterns, each with its own explanation. They cover the errors English learners make most: spelling (including dropped double consonants), homophones, missing apostrophes, subject-verb agreement (*she like*, *the news are*), verb forms (*buyed*, *has ate*, *is play*), prepositions (*in Monday*, *good in math*, *since three years*), plurals and counting (*childrens*, *advices*, *much people*), *a/an*, pronoun case (*me went*), and word choice (*said me*, *do a cake*). Each swap is guarded so that it is certain to be wrong in place, and the bank builder prefers the least-used patterns so questions do not keep repeating the same few mistakes. Level 2 mixes short and long sentences. Regenerate the bank (it is seeded, so the output only changes when the tables or sentences change) with `node scripts/generate-typohunt-bank.js`. `test/typohunt.test.js` checks every question.
+- **Compete live.** A correct find scores 100 plus 25 per level above the first plus a time bonus; a wrong click deducts 25 points and locks that player out for 1.5 seconds. A wrong click is not highlighted in the passage, and found words show the fix and the kind of mistake. The live ranking is a sorted bar chart of everyone in the room (your own bar is highlighted; hover a bar for the exact score, and ties share a rank).
+- **Celebration.** If every mistake is found and you found at least one of them without a single wrong click that round, your screen gets confetti and a PERFECT! banner (banner only when reduced motion is on). The server tracks each player's finds and wrong clicks per round for this.
+- **Skip and answers.** *Skip · show answers* gives up on the passage for the whole room: no points are awarded, every missed mistake is revealed, and each answer (found or missed) lists the wrong word, the fix, the kind of mistake and a short reason (for example "a contraction needs an apostrophe where letters are missing"). The wrong word is shown in red and the fix in green, with no strikethrough.
+- **Next question is a click.** Rounds never start on their own. When all mistakes are found, time runs out or someone skips, the answers stay on screen until an active player presses *Next question*, which keeps everyone's scores. *Reset ranking* (or changing level) zeroes the scores for the room. Up to 20 players compete; anyone beyond that watches and cannot act. A player who disconnects keeps their score during the reconnect grace period.
+- **Server-authoritative.** The server alone knows which words are wrong; scores, penalties, finds and the clock never come from the browser, and the passage is withheld until the countdown ends.
+
+## App switcher
+
+The nine-dot button at the far right of every top bar opens the other Hedgies apps. The server reads the live list from <https://www.hedgies.cloud/app.json> (override with `APP_LIST_URL`), hides this app by its `id` (`arcade`, override with `APP_ID`), and takes each app's name and icon from that app's own PWA manifest (the page's `<link rel=manifest>`, otherwise `manifest.webmanifest`). Nothing about the other apps is hard coded. The browser calls `/api/apps` on this origin, so no CORS headers are needed; only https URLs named by the list are fetched, results are cached for a minute, and the menu says so if the list cannot be loaded. Apps open in a new tab.
 
 ## Named arcade rooms
 

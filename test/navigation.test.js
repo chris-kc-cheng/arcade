@@ -63,19 +63,19 @@ function platform(game = 'board', legacy = false) {
     close() { this.emit('close'); }
     send(data) { sent.push(JSON.parse(data)); }
   }
-  const context = {URL, addEventListener(name, callback) { (document.listeners[name] ||= []).push(callback); }, document, WebSocket:FakeSocket, TextEncoder, Date, sessionStorage:{getItem:key => storage.get(key), setItem:(key,value) => storage.set(key,value)}, confirm:message => { prompts.push(message); return context.approve; }, approve:true, setInterval:callback => { timers.set(++nextTimer, callback); return nextTimer; }, clearInterval:id => timers.delete(id), ResizeObserver:class {observe() {} disconnect() {}}, location:{pathname:game === 'board' ? '/' : `/${game}`, assign(path) { this.assigned=path; }, reload() { this.reloaded=true; }}};
+  const context = {URL, addEventListener(name, callback) { (document.listeners[name] ||= []).push(callback); }, document, WebSocket:FakeSocket, TextEncoder, Date, sessionStorage:{getItem:key => storage.get(key), setItem:(key,value) => storage.set(key,value)}, confirm:message => { prompts.push(message); return context.approve; }, approve:true, fetch:(...args) => context.fetchImpl(...args), setInterval:callback => { timers.set(++nextTimer, callback); return nextTimer; }, clearInterval:id => timers.delete(id), ResizeObserver:class {observe() {} disconnect() {}}, location:{pathname:game === 'board' ? '/' : `/${game}`, assign(path) { this.assigned=path; }, reload() { this.reloaded=true; }}};
   context.window = context; vm.runInNewContext(fs.readFileSync(require.resolve('../public/platform.js'), 'utf8'), context);
   return {context, document, header, reset, sent, prompts, sockets, storage, timers, connect() { const socket = new context.WebSocket('ws://localhost/?room=test'); socket.emit('open'); return socket; }, packet(socket, message) { socket.emit('message',{data:JSON.stringify(message)}); }};
 }
-const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll','cube','slushy'];
+const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt'];
 
-test('all eleven games mount one identical shared shell and current route', () => {
+test('all twelve games mount one identical shared shell and current route', () => {
   const signature = node => `${node.tagName}.${node.className}[${node.children.map(signature).join(',')}]`;
   let expected;
   for (const game of routes) {
     const env = platform(game); const {header,document,context} = env;
     const api = context.ArcadePlatform.mount(header,{game});
-    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,11);
+    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,12);
     assert.equal(links.filter(link => link.getAttribute('aria-current') === 'page').length,1);
     assert.equal(links.find(link => link.getAttribute('aria-current') === 'page').href,game === 'board' ? '/' : `/${game}`);
     links.forEach(link => assert.ok(link.getAttribute('aria-label')));
@@ -139,7 +139,7 @@ test('debug retains at most 250 entries, accounts bytes, clears, and restores ke
 });
 
 test('legacy entry points delegate shared features and game shortcuts respect navigation', () => {
-  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll','cube','slushy']) {
+  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt']) {
     const html = fs.readFileSync(require.resolve(`../public/${game}.html`),'utf8');
     assert.match(html,new RegExp(`<header class="arcade-topbar" data-arcade-game="${game}">`));
     assert.doesNotMatch(html,/<nav|id="connection"|id="pollPresence"|id="fighterName"/);
@@ -180,4 +180,27 @@ test('leaving a cached page closes its sockets so it cannot keep old rooms occup
   const env=platform(),socket=env.connect();
   env.document.listeners.pagehide[0]();assert.equal(socket.readyState,3);
   env.document.listeners.pageshow[0]({persisted:true});assert.equal(env.context.location.reloaded,true);
+});
+
+test('app switcher lists the live apps from this origin, opens them in new tabs, and closes with Escape or an outside click', async () => {
+  const env = platform(), calls = [];
+  env.context.fetchImpl = async (url) => { calls.push(url); return {ok:true, json:async () => [{id:'a',name:'Whack-a-Math',url:'https://math.example/',icon:'https://math.example/i.png'},{id:'b',name:'Plain',url:'https://plain.example/',icon:null},{id:'c',name:'Bad',url:'javascript:alert(1)',icon:null}]}; };
+  const toggle = env.header.querySelector('.arcade-apps-toggle');
+  assert.equal(toggle.getAttribute('aria-label'), 'Switch app'); assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(toggle.parentElement, env.header.querySelector('.arcade-controls').children.at(-1), 'the switcher is the last control');
+  toggle.onclick(); assert.equal(toggle.getAttribute('aria-expanded'), 'true'); assert.match(env.header.querySelector('.arcade-apps-menu').textContent, /Loading/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(calls, ['/api/apps']);
+  const tiles = env.header.querySelectorAll('.arcade-app-tile');
+  assert.deepEqual(tiles.map(tile => tile.href), ['https://math.example/', 'https://plain.example/']);
+  assert.ok(tiles.every(tile => tile.target === '_blank' && tile.rel === 'noopener noreferrer'));
+  assert.match(tiles[0].textContent, /Whack-a-Math \(opens in a new tab\)/);
+  assert.equal(tiles[0].querySelector('img').src, 'https://math.example/i.png'); assert.equal(tiles[1].querySelector('.arcade-app-letter').textContent, 'P');
+  env.document.listeners.keydown[0]({key:'Escape', preventDefault() {}});
+  assert.equal(env.header.querySelector('.arcade-apps-menu'), null); assert.equal(toggle.getAttribute('aria-expanded'), 'false'); assert.equal(env.document.activeElement, toggle);
+  toggle.onclick(); env.document.listeners.pointerdown[0]({target:env.document.body});
+  assert.equal(env.header.querySelector('.arcade-apps-menu'), null);
+  env.context.fetchImpl = async () => ({ok:false, status:502});
+  toggle.onclick(); await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(env.header.querySelector('.arcade-apps-menu').textContent, /Could not load the app list/);
 });

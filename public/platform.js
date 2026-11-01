@@ -1,11 +1,11 @@
 (() => {
   // One shared shell for the React entry points and the dependency-free game clients.
-  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush']];
-  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy'};
+  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush'],['/typohunt','✎','Typo Hunt']];
+  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy',typohunt:'typohunt'};
   const NativeWebSocket = window.WebSocket, logs = [], pageSockets = new Set();
   const totals = { SENT: { messages: 0, bytes: 0 }, RECEIVED: { messages: 0, bytes: 0 } };
   let directory = [], selectedRoom = sessionStorage.getItem('arcade-room') || '', roomError = '';
-  let currentSocket, currentHeader, players = [], online = false, connectionLabel = 'CONNECTING', debugPanel, logList, stats;
+  let appSwitcher, currentSocket, currentHeader, players = [], online = false, connectionLabel = 'CONNECTING', debugPanel, logList, stats;
   const display = data => { if (typeof data !== 'string') return `[binary data: ${data?.byteLength ?? data?.size ?? 'unknown'} bytes]`; try { return JSON.stringify(JSON.parse(data), null, 2); } catch { return data; } };
   const byteSize = data => typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data?.byteLength ?? data?.size ?? 0;
   const formatBytes = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
@@ -86,6 +86,50 @@
     if (open) { updateStats(); logList.replaceChildren(); logs.forEach(renderEntry); debugPanel.querySelector('.arcade-debug-close').focus(); }
     else if (restoreFocus) toggle.focus();
   }
+  // The app switcher lists the other Hedgies apps. The server reads the live app.json (nothing is hard coded here)
+  // and returns each app's name, icon and URL, so this browser needs no cross-origin access.
+  function createAppSwitcher() {
+    const box = document.createElement('div'), button = document.createElement('button');
+    box.className = 'arcade-apps'; button.type = 'button'; button.className = 'arcade-button arcade-apps-toggle';
+    button.setAttribute('aria-label', 'Switch app'); button.setAttribute('aria-haspopup', 'true'); button.setAttribute('aria-expanded', 'false'); button.title = 'Other apps';
+    button.innerHTML = '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>';
+    let menu = null, request = 0;
+    const letter = app => { const node = document.createElement('span'); node.className = 'arcade-app-letter'; node.setAttribute('aria-hidden', 'true'); node.textContent = app.name.slice(0, 1).toUpperCase(); return node; };
+    function tile(app) {
+      const link = document.createElement('a'), label = document.createElement('span'), hint = document.createElement('span');
+      link.className = 'arcade-app-tile'; link.href = app.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      label.textContent = app.name; hint.className = 'arcade-sr-only'; hint.textContent = ' (opens in a new tab)'; label.append(hint);
+      let art = letter(app);
+      if (/^https:\/\//.test(app.icon || '')) { art = document.createElement('img'); art.src = app.icon; art.alt = ''; art.width = 48; art.height = 48; art.onerror = () => art.replaceWith(letter(app)); }
+      link.append(art, label); link.onclick = () => api.close(false);
+      return link;
+    }
+    async function open() {
+      const mine = ++request;
+      menu = document.createElement('nav'); menu.className = 'arcade-apps-menu arcade-apps-status'; menu.setAttribute('aria-label', 'Other apps'); menu.setAttribute('aria-busy', 'true'); menu.textContent = 'Loading apps…';
+      box.append(menu); button.setAttribute('aria-expanded', 'true');
+      let apps;
+      try {
+        const response = await fetch('/api/apps', {headers:{accept:'application/json'}});
+        if (!response.ok) throw new Error(String(response.status));
+        apps = await response.json();
+      } catch { if (mine === request && menu) { menu.setAttribute('aria-busy', 'false'); menu.textContent = 'Could not load the app list. Try again later.'; } return; }
+      if (mine !== request || !menu) return;
+      const usable = (Array.isArray(apps) ? apps : []).filter(app => app && typeof app.name === 'string' && /^https:\/\//.test(app.url || ''));
+      menu.setAttribute('aria-busy', 'false');
+      if (!usable.length) { menu.textContent = 'No other apps yet.'; return; }
+      menu.className = 'arcade-apps-menu'; menu.textContent = '';
+      usable.forEach(app => menu.append(tile(app)));
+      menu.querySelector('a')?.focus();
+    }
+    const api = {
+      element: box,
+      isOpen: () => Boolean(menu),
+      close(restoreFocus = false) { request++; menu?.remove(); menu = null; button.setAttribute('aria-expanded', 'false'); if (restoreFocus) button.focus(); }
+    };
+    button.onclick = () => { if (menu) api.close(true); else open(); };
+    box.append(button); return api;
+  }
   function mount(element, options = {}) {
     if (currentHeader?.element === element) { currentHeader.update(options); return currentHeader; }
     currentHeader?.destroy();
@@ -104,6 +148,7 @@
     const reset = existingReset || document.createElement('button'); reset.type = 'button'; reset.className = 'arcade-button arcade-reset'; reset.hidden = false;
     if (!existingReset) { reset.textContent = 'RESET'; reset.disabled = true; reset.onclick = () => config.onReset?.(); }
     controls.insertBefore(reset, debugToggle);
+    appSwitcher = createAppSwitcher(); controls.append(appSwitcher.element);
     const nameForm = element.querySelector('.arcade-name'), nameInput = nameForm.querySelector('input'), saveName = nameForm.querySelector('button');
     nameInput.value = sessionStorage.getItem('arcade-name') || '';
     nameForm.onsubmit = event => {
@@ -165,14 +210,16 @@
     const resize = () => document.documentElement.style.setProperty('--arcade-topbar-height', `${Math.ceil(element.getBoundingClientRect().height)}px`);
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     const timer = setInterval(() => { if (!details.hidden) renderPresence(); }, 1000);
-    const api = {element, render, update(next) { Object.assign(config, next); render(); }, closePresence() { roomPicker.removeAttribute('open'); pinned = false; if (details.contains(document.activeElement)) presenceToggle.focus(); showPresence(false); }, destroy() { clearInterval(timer); observer.disconnect(); if (currentHeader === api) { setDebugOpen(false, false); currentHeader = null; } }};
+    const api = {element, render, update(next) { Object.assign(config, next); render(); }, closePresence() { roomPicker.removeAttribute('open'); pinned = false; if (details.contains(document.activeElement)) presenceToggle.focus(); showPresence(false); }, destroy() { appSwitcher?.close(false); appSwitcher = null; clearInterval(timer); observer.disconnect(); if (currentHeader === api) { setDebugOpen(false, false); currentHeader = null; } }};
     currentHeader = api; render(); return api;
   }
   window.ArcadePlatform = {mount, send, isInteractiveTarget, setRoomCount(count) { currentHeader?.update({roomCount:count}); }};
   // Compatibility for clients that already consume the shared presence packet.
   window.renderArcadePresence = next => { players = Array.isArray(next) ? next : []; currentHeader?.render(); };
+  document.addEventListener('pointerdown', event => { if (appSwitcher?.isOpen() && !appSwitcher.element.contains(event.target)) appSwitcher.close(false); });
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
+    if (appSwitcher?.isOpen()) appSwitcher.close(true);
     if (debugPanel && !debugPanel.hidden) { event.preventDefault(); setDebugOpen(false); }
     currentHeader?.closePresence();
   });

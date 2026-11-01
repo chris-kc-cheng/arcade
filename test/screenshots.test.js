@@ -5,11 +5,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { GAMES, dimensions, checkShowcase } = require('../scripts/capture-screenshots');
 
-test('all eleven README previews share source and thumbnail dimensions', () => {
+test('all twelve README previews share source and thumbnail dimensions', () => {
   const result = checkShowcase();
-  assert.equal(result.count, 11);
+  assert.equal(result.count, 12);
   assert.equal(result.width / result.height, 16 / 9);
-  assert.equal(new Set(GAMES).size, 11);
+  assert.equal(new Set(GAMES).size, 12);
 });
 
 test('screenshot dimension reader rejects a disguised or corrupt PNG', () => {

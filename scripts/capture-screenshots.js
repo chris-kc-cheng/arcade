@@ -13,7 +13,7 @@ const net = require('node:net');
 const WebSocket = require('ws');
 
 const ROOT = path.resolve(__dirname, '..');
-const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy'];
+const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy', 'typohunt'];
 const WIDTH = 1920, HEIGHT = 1080;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -35,7 +35,7 @@ function dimensions(file) {
 function checkShowcase(root = ROOT) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const images = [...readme.matchAll(/<img\b[^>]*src="(public\/screenshots\/([^".]+)\.(?:png|svg))"[^>]*>/g)];
-  if (images.length !== GAMES.length) throw new Error('README must showcase exactly eleven experiences');
+  if (images.length !== GAMES.length) throw new Error('README must showcase exactly twelve experiences');
   let common;
   const found = new Set();
   for (const [tag, source, game] of images) {
@@ -116,8 +116,18 @@ async function capture() {
     }, 'Chromium debugging endpoint');
     const transport = new WebSocket(endpoint); await once(transport, 'open'); cdp = new CDP(transport);
 
+    // Every scene gets its own arcade room, so a tab or peer from the previous scene that is still closing
+    // can never be mistaken for this scene's room.
+    let sceneRoom = '';
+    async function newRoom() {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/?room=doodle&client=capture-${randomUUID()}`);
+      await once(socket, 'open');
+      const joined = new Promise(resolve => socket.on('message', raw => { const message = JSON.parse(raw); if (message.type === 'roomJoined') resolve(message.id); }));
+      socket.send(JSON.stringify({ type: 'createRoom' }));
+      const id = await joined; socket.close(); return id;
+    }
     async function peer(room, name, extra = {}) {
-      const params = new URLSearchParams({ room, client: `capture-${randomUUID()}`, ...extra });
+      const params = new URLSearchParams({ room, client: `capture-${randomUUID()}`, arcade: sceneRoom, ...extra });
       const socket = new WebSocket(`ws://127.0.0.1:${port}/?${params}`), messages = {};
       socket.on('message', raw => { const message = JSON.parse(raw); messages[message.type] = message; });
       const actor = { socket, messages, send: message => socket.send(JSON.stringify(message)) }; peers.add(actor);
@@ -129,9 +139,11 @@ async function capture() {
       const call = (method, params) => cdp.call(method, params, sessionId), errors = [];
       cdp.handlers.push(event => { if (event.sessionId === sessionId && event.method === 'Runtime.exceptionThrown') errors.push(event.params.exceptionDetails.text); });
       await call('Page.enable'); await call('Runtime.enable');
+      // A closing sibling tab can leave this one unfocused, and games such as Slush Rush release held keys on blur.
+      await call('Emulation.setFocusEmulationEnabled', { enabled: true }); await call('Page.bringToFront');
       await call('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
       // Only the isolated synthetic capture tab gets this protocol observer.
-      await call('Page.addScriptToEvaluateOnNewDocument', { source: `sessionStorage.setItem('arcade-name',${JSON.stringify(name)}); sessionStorage.setItem('arcade-client','capture-'+crypto.randomUUID()); window.__capture={sockets:[],messages:{}}; const CaptureSocket=window.WebSocket; window.WebSocket=class extends CaptureSocket { constructor(...args){super(...args);window.__capture.sockets.push(this);this.addEventListener('message',event=>{try{const m=JSON.parse(event.data);window.__capture.messages[m.type]=m;}catch{}});} };` });
+      await call('Page.addScriptToEvaluateOnNewDocument', { source: `sessionStorage.setItem('arcade-name',${JSON.stringify(name)}); sessionStorage.setItem('arcade-room',${JSON.stringify(sceneRoom)}); sessionStorage.setItem('arcade-client','capture-'+crypto.randomUUID()); window.__capture={sockets:[],messages:{}}; const CaptureSocket=window.WebSocket; window.WebSocket=class extends CaptureSocket { constructor(...args){super(...args);window.__capture.sockets.push(this);this.addEventListener('message',event=>{try{const m=JSON.parse(event.data);window.__capture.messages[m.type]=m;}catch{}});} };` });
       const evaluate = async expression => {
         const response = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
         if (response.exceptionDetails) throw new Error(`Capture browser evaluation failed: ${response.exceptionDetails.text}`);
@@ -150,8 +162,11 @@ async function capture() {
       return actor;
     }
     const evidence = [];
-    for (const game of GAMES) {
+    // CAPTURE_ONLY=slushy,typohunt tries single scenes without publishing, for debugging a scene.
+    const only = process.env.CAPTURE_ONLY?.split(',').filter(Boolean);
+    for (const game of only || GAMES) {
       const route = game === 'board' ? '/' : `/${game}`;
+      sceneRoom = await newRoom();
       const coordinator = await peer('doodle', 'Capture coordinator');
       coordinator.send({ type: 'switchGame', path: route }); await pause(100); coordinator.socket.close(); peers.delete(coordinator);
       let tab;
@@ -172,19 +187,44 @@ async function capture() {
         tab = await page(route);
         if (game === 'slushy') {
           await waitFor(() => tab.state('slushyState'), 'slushy state');
-          await tab.evaluate("document.getElementById('start').click()");
+          // Keys 1-4 are ignored while focus is inside the top bar, and a capture tab opened after another can start with it there,
+          // so blur first and deliver the key events to the page directly instead of through the browser's focus.
+          await tab.evaluate("document.activeElement?.blur(); document.getElementById('start').click()");
           for (let served = 0; served < 3; served++) {
-            const state = await waitFor(async () => {const s=await tab.state('slushyState');return s?.served===served && s;}, 'next slushy cup');
+            const state = await waitFor(async () => {const s=await tab.state('slushyState');return s?.phase==='playing' && s.served===served && s;}, 'next slushy cup');
             const lane=state.cups.findIndex(Boolean), key=String(lane+1);
-            await tab.call('Input.dispatchKeyEvent',{type:'keyDown',key,code:`Digit${key}`});
+            await tab.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',code:'Digit${key}',bubbles:true}))`);
             await waitFor(async () => (await tab.state('slushyState'))?.cups[lane]?.fill >= 1.08, 'filled dome');
-            await tab.call('Input.dispatchKeyEvent',{type:'keyUp',key,code:`Digit${key}`});
+            await tab.evaluate(`document.dispatchEvent(new KeyboardEvent('keyup',{key:'${key}',code:'Digit${key}',bubbles:true}))`);
           }
           const state=await waitFor(async () => {const s=await tab.state('slushyState');return s?.served===3 && s;}, 'two slushy cups');
           for(let lane=0;lane<4;lane++) if(state.cups[lane]) {
-            const key=String(lane+1);await tab.call('Input.dispatchKeyEvent',{type:'keyDown',key,code:`Digit${key}`});
+            const key=String(lane+1);await tab.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',code:'Digit${key}',bubbles:true}))`);
           }
           await pause(1100);
+        } else if (game === 'typohunt') {
+          // The hunt uses level 5. Mistake positions are found by comparing each sentence with the clean sentence bank;
+          // the server still decides every score.
+          await waitFor(() => tab.state('typoState'), 'typo hunt state');
+          await tab.send({ type: 'level', level: 5 });
+          const first = await waitFor(async () => { const value = await tab.state('typoState'); return value?.level === 5 && value.phase === 'hunting' && value; }, 'typo hunt round');
+          const hunt = require('../lib/typohunt'), names = ['Maya', 'Leo', 'Priya', 'Sam', 'Noor', 'Omar', 'Zoe', 'Ben'];
+          const clean = hunt.sentences.flatMap(text => names.map(name => text.replaceAll('{n}', name).split(/\s+/)));
+          const wrong = []; let start = 0;
+          first.tokens.forEach((token, index) => {
+            if (!/[.?!]$/.test(token) && index !== first.tokens.length - 1) return;
+            const group = first.tokens.slice(start, index + 1);
+            const best = clean.filter(words => words.length === group.length).map(words => group.flatMap((word, at) => word === words[at] ? [] : [start + at])).sort((x, y) => x.length - y.length)[0];
+            wrong.push(...best); start = index + 1;
+          });
+          if (wrong.length !== 5) throw new Error(`typohunt: expected five mistakes, found ${wrong.length}`);
+          const sam = await peer('typohunt', 'Sam'), jo = await peer('typohunt', 'Jo');
+          await waitFor(() => sam.messages.typoState && jo.messages.typoState, 'typo hunt peers');
+          await tab.send({ type: 'pick', index: wrong[0] }); await pause(150);
+          sam.send({ type: 'pick', index: wrong[2] }); await pause(150);
+          await tab.send({ type: 'pick', index: wrong[3] }); await pause(150);
+          jo.send({ type: 'pick', index: first.tokens.findIndex((_, index) => !wrong.includes(index)) });
+          await waitFor(async () => Object.keys((await tab.state('typoState')).found).length === 3, 'typo hunt finds');
         } else if (game === 'cube') {
           await waitFor(() => tab.state('cubeState'), 'cube state');
           await tab.send({type:'scramble'}); await peer('cube', 'Sam');
@@ -249,18 +289,25 @@ async function capture() {
       console.log(`Captured ${game} at ${WIDTH}×${HEIGHT}`);
       await tab.close(); peers.forEach(actor => actor.socket.close()); peers.clear();
     }
+    if (only) {
+      const preview = process.env.CAPTURE_PREVIEW_DIR || path.join(os.tmpdir(), 'arcade-screenshot-preview'); fs.mkdirSync(preview, { recursive: true });
+      for (const game of only) fs.copyFileSync(path.join(staging, `${game}.png`), path.join(preview, `${game}.png`));
+      console.log(`Preview only; nothing published. Captures are in ${preview}`); return;
+    }
     // Publish only after every genuine browser capture has passed validation.
     for (const game of GAMES) fs.copyFileSync(path.join(staging, `${game}.png`), path.join(ROOT, 'public/screenshots', `${game}.png`));
     let readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     readme = readme.replace(/public\/screenshots\/(typing|wordle|poll)\.svg/g, 'public/screenshots/$1.png');
     readme = readme.replace(/(alt="[^"]*) illustration"/g, '$1 screenshot"');
-    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll eleven previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
+    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll twelve previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
     fs.writeFileSync(path.join(ROOT, 'README.md'), readme);
     fs.writeFileSync(path.join(ROOT, 'public/screenshots/capture-manifest.json'), JSON.stringify({ capturedAt: new Date().toISOString(), method: 'Chromium CDP, local server, 100% scale', scenes: evidence }, null, 2) + '\n');
     checkShowcase();
   } finally {
     cleanup(); process.removeListener('SIGINT', cleanup); process.removeListener('SIGTERM', cleanup);
-    await pause(200); fs.rmSync(temporary, { recursive: true, force: true });
+    await pause(200);
+    // Windows can keep the browser profile locked for a moment; a leftover temp folder must not hide the real error.
+    try { fs.rmSync(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* leave it for the operating system */ }
   }
 }
 
