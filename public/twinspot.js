@@ -16,9 +16,27 @@ function buildCards(){
       const button=document.createElement('button');button.type='button';button.className=`item ${item.kind}`;button.dataset.card=card;button.dataset.item=index;
       button.style.left=`${50+item.x*50}%`;button.style.top=`${50+item.y*50}%`;button.style.fontSize=`${item.fs*100}cqw`;button.style.setProperty('--rot',`${item.rot}deg`);
       button.textContent=item.label;button.setAttribute('aria-label',item.kind==='word'?`the word ${item.name}`:item.name);return button}));
+    fitCard(element);
     if(roundSeen)element.classList.remove('dealing'),void element.offsetWidth,element.classList.add('dealing');
   });
   if(!state.cards.length){cardKeys=[];$('#card0').replaceChildren();$('#card1').replaceChildren()}else roundSeen=true;
+}
+// Safety net: the server places items using typical font sizes, but a different emoji or text font can be wider. After a card is
+// built, measure every item (its rotated box, using at most 1.2em of an emoji's width, since that is what is drawn) and shrink
+// any item that comes within 3.5% of the circle's edge. Only shrinking, so no new overlaps appear.
+function fitCard(element){
+  const width=element.clientWidth,radius=width/2,limit=radius*0.965;
+  if(!width)return;
+  element.querySelectorAll('.item').forEach(button=>{
+    for(let step=0;step<40;step++){
+      const font=parseFloat(getComputedStyle(button).fontSize),angle=(parseFloat(button.style.getPropertyValue('--rot'))||0)*Math.PI/180;
+      const w=button.classList.contains('emoji')?Math.min(button.offsetWidth,font*1.2):button.offsetWidth,h=button.offsetHeight;
+      const cx=parseFloat(button.style.left)/100*width,cy=parseFloat(button.style.top)/100*width;let far=0;
+      for(const[sx,sy]of[[-1,-1],[1,-1],[1,1],[-1,1]]){const dx=sx*w/2,dy=sy*h/2,x=cx+dx*Math.cos(angle)-dy*Math.sin(angle)-radius,y=cy+dx*Math.sin(angle)+dy*Math.cos(angle)-radius;far=Math.max(far,Math.hypot(x,y))}
+      if(far<=limit)break;
+      button.style.fontSize=`${parseFloat(button.style.fontSize)*0.95}cqw`;
+    }
+  });
 }
 function paintMatch(){
   document.querySelectorAll('.item').forEach(button=>button.classList.toggle('match',state.phase==='revealed'&&state.match?.[Number(button.dataset.card)]===Number(button.dataset.item)));
@@ -54,6 +72,7 @@ function render(){
   document.querySelectorAll('[data-level]').forEach(button=>{const on=button.dataset.level===state.level;button.classList.toggle('active',on);button.setAttribute('aria-pressed',String(on));button.disabled=!player});
   $('#card0').parentElement.classList.toggle('locked',state.phase==='playing'&&(me()?.lockedUntil||0)>now());
 }
+document.fonts?.ready.then(()=>document.querySelectorAll('.card').forEach(fitCard));
 function connect(){
   socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/?room=twinspot&client=${encodeURIComponent(clientId)}`);
   socket.onopen=()=>{reconnectDelay=500;const name=sessionStorage.getItem('arcade-name');if(name)send({type:'setName',name})};
