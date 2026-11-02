@@ -16,12 +16,60 @@ test('typo hunt protocol accepts only bounded picks, levels, reset, skip and nex
   assert.deepEqual(cleanTypoAction({ type: 'next' }), { type: 'next' });
 });
 
-test('every sentence in the bank has words the generator can corrupt', () => {
-  for (const text of [...hunt.shortSentences, ...hunt.sentences]) {
-    assert.ok(hunt.candidates(text.replaceAll('{n}', 'Maya').replaceAll('{m}', 'Leo').split(/\s+/)).length >= 1, text);
+test('every short sentence has words the generator can corrupt, and level 1 sentences stay short', () => {
+  for (const text of hunt.shortSentences) {
+    const tokens = text.replaceAll('{n}', 'Maya').replaceAll('{m}', 'Leo').split(/\s+/);
+    assert.ok(hunt.candidates(tokens).length >= 1, text);
+    assert.ok(tokens.length <= 9, text);
   }
-  assert.ok(hunt.shortSentences.every(text => text.replaceAll('{n}', 'Maya').replaceAll('{m}', 'Leo').split(/\s+/).length <= 9), 'level 1 sentences are short');
   assert.ok(hunt.shortSentences.length >= 400, 'enough short sentences for 500 distinct level-1 questions');
+});
+
+// The multi-sentence passages (levels 2 to 5) are runs of consecutive lines from one story. These checks keep every story a
+// single sensible piece of writing wherever a run starts.
+test('stories are self-contained sentence by sentence, in one tense, and have enough corruptible words in every run', () => {
+  assert.ok(hunt.stories.length >= 25);
+  const pronounStart = /^(he|she|they|her|his|their|them|him)\b/i;
+  const female = /\b(he|his|him|himself)\b/i, male = /\b(she|her|hers|herself)\b/i;
+  for (const story of hunt.stories) {
+    assert.ok(['f', 'm', 'x'].includes(story.who), story.title);
+    assert.ok(story.lines.length >= 6, `${story.title} needs at least six sentences for level 5`);
+    for (const line of story.lines) {
+      assert.doesNotMatch(line, /^The (puppy|neighbor|volcano|uncle|old man|guests|signs|vendors|students|players|clerk|manager|coach|librarian|baker|guide|journey|bus|forecast|train)/, `${story.title}: opens with something only an earlier sentence introduced: ${line}`);
+      assert.ok(!/^It/i.test(line) || /^It (rained|snowed)/.test(line), `${story.title}: a bare It points at another sentence: ${line}`);
+      assert.doesNotMatch(line, pronounStart, `${story.title}: a sentence may not start with a pronoun: ${line}`);
+      assert.ok(/[.?!]$/.test(line) && line.split(/(?<=[.?!])\s+(?=[A-Z{])/).length === 1 + (line.includes('Mr. ') ? 1 : 0), `${story.title}: one sentence per line: ${line}`);
+      if (story.who === 'f') assert.doesNotMatch(line, female, `${story.title}: a girl's story uses she/her: ${line}`);
+      if (story.who === 'm') assert.doesNotMatch(line, male, `${story.title}: a boy's story uses he/his: ${line}`);
+      // A gendered pronoun must point at someone named in the very same sentence.
+      if (story.who !== 'x' && /\b(she|her|he|his|him)\b/i.test(line)) assert.ok(line.includes('{n}'), `${story.title}: pronoun without its person: ${line}`);
+    }
+    if (story.who === 'x') assert.ok(story.lines.every(line => !line.includes('{n}')), story.title);
+    else assert.ok(story.lines.every(line => !/\bI\b/.test(line)), `${story.title}: a named story is not first person`);
+    // The same run of 2, 3, 4 or 6 sentences can start anywhere and still holds enough separate words to corrupt.
+    for (const count of [2, 3, 4, 6]) for (let start = 0; start + count <= story.lines.length; start++) {
+      const tokens = story.lines.slice(start, start + count).join(' ').replaceAll('{n}', 'Maya').split(/\s+/);
+      let spots = 0, last = -9;
+      for (const index of hunt.candidates(tokens).map(candidate => candidate.index).sort((x, y) => x - y)) if (index - last > 1) { spots++; last = index; }
+      assert.ok(spots >= (count === 6 ? 5 : count), `${story.title} run ${start}+${count} has only ${spots} spots`);
+    }
+  }
+});
+
+test('every multi-sentence question in the bank is consecutive sentences of one story with one name', () => {
+  const bank = require('../lib/typohunt-bank.json');
+  const runs = new Set();
+  for (const story of hunt.stories) for (const name of story.who === 'x' ? [''] : hunt.heroes[story.who]) {
+    const lines = story.lines.map(line => line.replaceAll('{n}', name));
+    for (let start = 0; start < lines.length; start++) for (let end = start + 2; end <= lines.length; end++) runs.add(lines.slice(start, end).join(' '));
+  }
+  for (const level of [2, 3, 4, 5]) for (const entry of bank[level]) {
+    assert.ok(runs.has(entry.text), `level ${level} passage is not a run from one story: ${entry.text}`);
+    assert.equal(entry.text.split(/(?<=[.?!])\s+(?=[A-Z])/).length >= level || level === 5, true);
+  }
+  // Levels grow in length: 2, 3, 4 and 6 sentences.
+  const lines = level => bank[level].map(entry => entry.text.split(/(?<=[.?!])\s+(?=[A-Z])/).filter(part => part !== 'Mr.').length);
+  assert.ok(Math.min(...lines(2)) >= 2 && Math.min(...lines(5)) >= 6);
 });
 
 test('levels 1 to 5 hide exactly that many mistakes in ever longer passages, generated by rules', () => {
