@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction, cleanTypoAction, cleanPollAction } = require('./lib/protocol');
+const { cleanPoint, cleanFighterInput, cleanBigTwoAction, cleanTypingAction, cleanWordleAction, cleanTypoAction, cleanTwinAction, cleanPollAction } = require('./lib/protocol');
 const { randomParagraph, typingStats } = require('./lib/typing');
 const { cardValue, classify, beats, deck: bigTwoDeck } = require('./lib/bigtwo');
 const { SNAKE_COLS, SNAKE_ROWS, snakeBodyAt, chooseSnakeSpawn, cleanSnakeAction } = require('./lib/snake');
@@ -11,6 +11,7 @@ const { TANK_MAP_HALF_SIZE, createTankObstacles } = require('./lib/tank');
 const { words: wordleWords, scoreGuess, letterStatuses, randomWord } = require('./lib/wordle');
 
 const typoHunt = require('./lib/typohunt');
+const twinSpot = require('./lib/twinspot');
 const { createAppDirectory } = require('./lib/apps');
 
 const { Worker } = require('node:worker_threads');
@@ -20,8 +21,8 @@ const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) 
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy', '/typohunt']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html'], ['/typohunt', 'typohunt.html']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy', '/typohunt', '/twinspot']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html'], ['/typohunt', 'typohunt.html'], ['/twinspot', 'twinspot.html']]);
 const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -265,6 +266,9 @@ const slushyGames = new Map();
 const typoPlayers = new Map();
 let typoOrder = [], nextTypoNumber = 1, typoTimer;
 const typoGame = typoHunt.newGame();
+const twinPlayers = new Map();
+let twinOrder = [], nextTwinNumber = 1, twinTimer;
+const twinGame = twinSpot.newGame();
 const wordleGames = new Map();
 const polls = new Map();
 
@@ -1154,6 +1158,64 @@ function addTypoHunt(socket, key) {
   });
 }
 
+function activeTwinPlayers() { return twinOrder.slice(0, twinSpot.MAX_PLAYERS).map(key => twinPlayers.get(key)).filter(Boolean); }
+function broadcastTwinSpot() {
+  const now = Date.now(), active = activeTwinPlayers(), game = twinSpot.publicGame(twinGame, now);
+  // The live ranking: every connected player in the room, best score first.
+  const players = active.filter(player => player.socket?.readyState === WebSocket.OPEN).map(twinSpot.publicPlayer).sort((a, b) => b.score - a.score || b.found - a.found || a.name.localeCompare(b.name));
+  for (const viewer of twinPlayers.values()) if (viewer.socket?.readyState === WebSocket.OPEN) {
+    viewer.socket.send(JSON.stringify({ type: 'twinState', ...game, selfId: viewer.id, role: active.includes(viewer) ? 'player' : 'spectator', players, spectators: Math.max(0, twinOrder.length - active.length) }));
+  }
+}
+// A found (or skipped) pair stays revealed for a moment, then the next pair is dealt automatically.
+function scheduleTwinSpot() {
+  clearTimeout(twinTimer);
+  if (twinGame.phase !== 'revealed') return;
+  twinTimer = setTimeout(() => {
+    if (activeTwinPlayers().some(player => player.socket?.readyState === WebSocket.OPEN)) restartTwinSpot(twinGame.level, true, true);
+    else { twinGame.phase = 'waiting'; broadcastTwinSpot(); }
+  }, Math.max(0, twinGame.revealUntil - Date.now()));
+  twinTimer?.unref?.();
+}
+function restartTwinSpot(level = twinGame.level, keepScores = true, continuing = false) {
+  twinSpot.startRound(twinGame, activeTwinPlayers(), Date.now(), { level, keepScores, continuing });
+  scheduleTwinSpot(); broadcastTwinSpot();
+}
+function addTwinSpot(socket, key) {
+  key = uniqueClientKey(twinPlayers, key);
+  let player = twinPlayers.get(key);
+  if (player) { clearTimeout(player.removeTimer); player.removeTimer = null; player.socket = socket; }
+  else {
+    const number = nextTwinNumber++;
+    player = twinSpot.newPlayer(key, `spotter-${number}`, profileName(socket) || `Spotter ${number}`);
+    player.socket = socket;
+    twinPlayers.set(key, player); twinOrder.push(key);
+  }
+  socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
+  if (twinGame.phase === 'waiting') restartTwinSpot(twinGame.level, true); else broadcastTwinSpot();
+  socket.on('message', raw => {
+    if (player.socket !== socket) return;
+    let source; try { source = JSON.parse(raw.toString()); } catch { return; }
+    if (!source || typeof source !== 'object') return;
+    if (source.type === 'setName') { const name = profileName(socket); if (name) { player.name = name; broadcastTwinSpot(); } return; }
+    const message = cleanTwinAction(source);
+    // Spectators (beyond the room's player cap) watch only: they can neither click symbols nor reset the ranking.
+    if (!message || !activeTwinPlayers().includes(player)) return;
+    if (message.type === 'reset') { restartTwinSpot(twinGame.level, false); return; }
+    if (message.type === 'level') { restartTwinSpot(message.level, false); return; }
+    if (message.type === 'skip') { if (twinSpot.skip(twinGame, Date.now())) { scheduleTwinSpot(); broadcastTwinSpot(); } return; }
+    const result = twinSpot.pick(twinGame, player, message.card, message.item, Date.now());
+    if (!result.ok) return;
+    if (twinGame.phase === 'revealed') scheduleTwinSpot();
+    broadcastTwinSpot();
+  });
+  socket.on('close', () => {
+    if (player.socket !== socket) return;
+    player.socket = null; broadcastTwinSpot();
+    scheduleRemoval(player, () => { twinPlayers.delete(key); twinOrder = twinOrder.filter(item => item !== key); broadcastTwinSpot(); });
+  });
+}
+
 function addSlushy(socket, key) {
   key = uniqueClientKey(slushyGames, key);
   let record = slushyGames.get(key);
@@ -1195,6 +1257,7 @@ wss.on('connection', (socket, request) => {
   registerPlatformSocket(socket, request, key, room);
   if (room === 'slushy') { addSlushy(socket, key); return; }
   if (room === 'typohunt') { addTypoHunt(socket, key); return; }
+  if (room === 'twinspot') { addTwinSpot(socket, key); return; }
   if (room === 'cube') { addCube(socket); return; }
   if (room === 'tanks') {
     addTank(socket, key);

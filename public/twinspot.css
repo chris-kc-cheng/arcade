@@ -1,0 +1,43 @@
+:root{--ink:#f3f6ea;--muted:#9db3a5;--line:#2e5a4c;--lime:#b9f36b;--amber:#ffc857;--coral:#ff9b8c}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#0b1f1b;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+button{font:inherit;cursor:pointer}
+:is(button,a):focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+main{width:min(1500px,96vw);margin:0 auto;padding:22px 0 40px}
+h2{margin:0 0 10px;font:700 11px 'DM Mono',monospace;letter-spacing:.18em;color:var(--muted)}
+h2 small{margin-left:10px;font-weight:400;letter-spacing:.04em}
+.intro{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+h1{margin:0;font-size:clamp(30px,4vw,44px);line-height:1;letter-spacing:-.04em;font-weight:900}h1 span{color:var(--lime)}
+.levels{display:flex;align-items:center;gap:6px;margin-top:12px}
+.levels span{margin-right:6px;font:700 11px 'DM Mono',monospace;letter-spacing:.18em;color:var(--muted)}
+.levels button{height:36px;padding:0 14px;border:0;border-radius:8px;background:transparent;color:var(--muted);font:700 12px 'DM Mono',monospace;letter-spacing:.06em}
+.levels button:hover:not(:disabled){color:var(--ink)}.levels button.active{background:var(--lime);color:#0b1f1b}.levels button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:10px 0;min-height:40px}
+#status{margin:0;flex:1 1 320px;font:500 12px 'DM Mono',monospace;color:var(--lime)}
+.action{padding:9px 16px;border:0;border-radius:8px;background:#17352f;color:var(--ink);font:700 11px 'DM Mono',monospace;letter-spacing:.06em}.action:hover{background:#21463d}.action[hidden]{display:none}
+.scores{width:min(380px,100%);text-align:right}
+.scores ol{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+.scores li{position:relative;display:flex;flex-direction:row-reverse;align-items:center;gap:8px;height:26px;padding:0 10px;overflow:hidden;color:#fff;font-size:13px}
+.scores li em{position:absolute;inset:0 0 0 auto;min-width:4px;border-radius:5px;background:#2f5c4c;transition:width .3s}.scores li em.negative{background:var(--coral);width:4px!important}
+.scores li i,.scores li b{position:relative;white-space:nowrap}
+.scores li i{font:700 11px 'DM Mono',monospace;font-style:normal;color:#cfe3d6}
+.scores li b{overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.scores li.self b{font-weight:800}.scores li.self i{color:#fff}.scores li.self em{background:#5c9a2f}
+.cards{display:flex;justify-content:center;gap:clamp(12px,3vw,48px);flex-wrap:wrap}
+.card{position:relative;container-type:inline-size;width:min(46vw,calc(100vh - 340px),620px);min-width:250px;aspect-ratio:1;border:2px solid var(--line);border-radius:50%;background:radial-gradient(circle at 35% 30%,#17372f,#0f2823)}
+.cards.locked .card{border-color:var(--coral)}
+.card.revealed{border-color:var(--lime)}
+.item{position:absolute;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ink);line-height:1;white-space:nowrap;transform:translate(-50%,-50%) rotate(var(--rot,0deg));transition:transform .15s}
+.item.emoji{font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}
+.item.word{font-weight:800;letter-spacing:.02em;text-transform:lowercase;color:var(--lime)}
+.item:hover{transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scale(1.12)}
+.card.revealed .item:not(.match){opacity:.35}
+.item.match{border-radius:999px;box-shadow:0 0 0 .35em #b9f36b99,0 0 1.4em #b9f36b;animation:glow .8s ease-in-out infinite alternate}
+@keyframes glow{from{box-shadow:0 0 0 .2em #b9f36b66,0 0 .8em #b9f36b}to{box-shadow:0 0 0 .4em #b9f36bbb,0 0 1.6em #b9f36b}}
+.footnote{margin:18px 0 0;font:11px 'DM Mono',monospace;color:#7e9a8b;text-align:center}
+body.spectator .cards{opacity:.85}
+@media(max-width:700px){.scores{width:100%}.card{width:min(92vw,calc(100vh - 300px))}}
+@media(prefers-reduced-motion:reduce){.item,.scores li em{transition:none}.item.match{animation:none}}
+.card.dealing{animation:deal .35s ease-out}
+@keyframes deal{from{opacity:0;transform:translateY(-14%) scale(.9) rotate(-8deg)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.card.dealing{animation:none}}

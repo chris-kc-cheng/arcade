@@ -65,4 +65,8 @@ The Typo Hunt scene switches the room to level 5 and waits for the countdown. Th
 - Every scene runs in its own freshly created arcade room, and the capture tab and its peers are told that room explicitly, so a previous scene's closing tab can never leak into the next one.
 - On Windows set `CHROME_BIN` to the browser executable (for example `C:\Program Files\Google\Chrome\Application\chrome.exe`); `which` is not available there.
 - `CAPTURE_ONLY=typohunt,slushy npm run screenshots` captures just those scenes into a temporary preview folder (printed at the end, or set `CAPTURE_PREVIEW_DIR`) without touching the repository, which is handy for reviewing one scene.
-- The app switcher button appears in every top bar, so all twelve captures were refreshed together.
+- The app switcher button appears in every top bar, so all thirteen captures were refreshed together.
+
+## Twin Spot capture
+
+The Twin Spot scene switches the room to the hard level, then three synthetic players score and miss through the real protocol: the page's own player and Sam each find a pair, and Jo makes one wrong click. The shot is taken of the fresh pair that is dealt after the last find, so it shows words and emoji at random sizes and rotations plus the ranking. The scene finds each match by the name shared by the two copies; the server still judges every click.

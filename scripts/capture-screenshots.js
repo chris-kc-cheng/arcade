@@ -13,7 +13,7 @@ const net = require('node:net');
 const WebSocket = require('ws');
 
 const ROOT = path.resolve(__dirname, '..');
-const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy', 'typohunt'];
+const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy', 'typohunt', 'twinspot'];
 const WIDTH = 1920, HEIGHT = 1080;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -35,7 +35,7 @@ function dimensions(file) {
 function checkShowcase(root = ROOT) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const images = [...readme.matchAll(/<img\b[^>]*src="(public\/screenshots\/([^".]+)\.(?:png|svg))"[^>]*>/g)];
-  if (images.length !== GAMES.length) throw new Error('README must showcase exactly twelve experiences');
+  if (images.length !== GAMES.length) throw new Error('README must showcase exactly thirteen experiences');
   let common;
   const found = new Set();
   for (const [tag, source, game] of images) {
@@ -225,6 +225,25 @@ async function capture() {
           await tab.send({ type: 'pick', index: wrong[3] }); await pause(150);
           jo.send({ type: 'pick', index: first.tokens.findIndex((_, index) => !wrong.includes(index)) });
           await waitFor(async () => Object.keys((await tab.state('typoState')).found).length === 3, 'typo hunt finds');
+        } else if (game === 'twinspot') {
+          // Hard level, a few finished pairs for the ranking, then a fresh pair is captured while it is still being hunted.
+          // The match is the item whose name appears on both cards; the server still decides every score.
+          const spot = state => { const i = state.cards[0].findIndex(item => state.cards[1].some(other => other.name === item.name)); return { i, j: state.cards[1].findIndex(other => other.name === state.cards[0][i].name) }; };
+          await waitFor(() => tab.state('twinState'), 'twin spot state');
+          await tab.send({ type: 'level', level: 'hard' });
+          const sam = await peer('twinspot', 'Sam'), jo = await peer('twinspot', 'Jo');
+          const playing = async round => waitFor(async () => { const value = await tab.state('twinState'); return value?.level === 'hard' && value.phase === 'playing' && value.round >= round && value; }, 'twin spot pair');
+          let state = await playing(1);
+          await tab.send({ type: 'pick', card: 0, item: spot(state).i });
+          state = await playing(state.round + 1);
+          sam.send({ type: 'pick', card: 1, item: spot(state).j });
+          state = await playing(state.round + 1);
+          jo.send({ type: 'pick', card: 0, item: state.cards[0].findIndex(item => !state.cards[1].some(other => other.name === item.name)) });
+          await pause(150);
+          await tab.send({ type: 'pick', card: 0, item: spot(state).i });
+          state = await playing(state.round + 1);
+          sam.send({ type: 'pick', card: 0, item: spot(state).i });
+          await playing(state.round + 1);
         } else if (game === 'cube') {
           await waitFor(() => tab.state('cubeState'), 'cube state');
           await tab.send({type:'scramble'}); await peer('cube', 'Sam');
@@ -299,7 +318,7 @@ async function capture() {
     let readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     readme = readme.replace(/public\/screenshots\/(typing|wordle|poll)\.svg/g, 'public/screenshots/$1.png');
     readme = readme.replace(/(alt="[^"]*) illustration"/g, '$1 screenshot"');
-    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll twelve previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
+    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll thirteen previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
     fs.writeFileSync(path.join(ROOT, 'README.md'), readme);
     fs.writeFileSync(path.join(ROOT, 'public/screenshots/capture-manifest.json'), JSON.stringify({ capturedAt: new Date().toISOString(), method: 'Chromium CDP, local server, 100% scale', scenes: evidence }, null, 2) + '\n');
     checkShowcase();
