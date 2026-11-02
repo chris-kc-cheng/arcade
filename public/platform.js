@@ -1,7 +1,7 @@
 (() => {
   // One shared shell for the React entry points and the dependency-free game clients.
-  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush'],['/typohunt','✎','Typo Hunt']];
-  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy',typohunt:'typohunt'};
+  const games = [['/','◉','Drawing board'],['/tank','▣','Tank'],['/penalty','●','Penalty shootout'],['/fighter','✦','Line Fighter'],['/snake','∿','Snake'],['/bigtwo','♦','Big-D'],['/typing','T','Type/Off'],['/wordle','W','Many Words'],['/poll','≡','Quick Poll'],['/cube','▦','Cube Lab'],['/slushy','❄','Slush Rush'],['/typohunt','✎','Typo Hunt'],['/twinspot','◐','Twin Spot']];
+  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy',typohunt:'typohunt',twinspot:'twinspot'};
   const NativeWebSocket = window.WebSocket, logs = [], pageSockets = new Set();
   const totals = { SENT: { messages: 0, bytes: 0 }, RECEIVED: { messages: 0, bytes: 0 } };
   let directory = [], selectedRoom = sessionStorage.getItem('arcade-room') || '', roomError = '';

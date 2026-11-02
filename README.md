@@ -22,11 +22,16 @@
 | <img src="public/screenshots/cube.png" alt="Cube Lab interactive cube solver screenshot" width="320" height="180"> | <img src="public/screenshots/slushy.png" alt="Slush Rush cartoon slushy dispenser gameplay" width="320" height="180"> | <img src="public/screenshots/typohunt.png" alt="Typo Hunt spelling and grammar race with a live ranking screenshot" width="320" height="180"> |
 | Click stickers to enter your cube, then follow synchronized 3D turns with pause, back, and next controls. [Open Cube Lab](/cube). | Pour four fruity flavors into S–XL cups in a private 60-second shift. Fill the dome for a bonus, avoid spills, and chase the shared best score. [Play Slush Rush](/slushy). | A proofreading race: the whole room hunts the same spelling and grammar mistakes across five levels, with a live ranking. [Play Typo Hunt](/typohunt). |
 
+| Twin Spot |
+| --- |
+| <img src="public/screenshots/twinspot.png" alt="Twin Spot two-card emoji matching game screenshot" width="320" height="180"> |
+| A Spot-It style race: find the one emoji (or its word, on hard) that appears on both round cards, with a live ranking. [Play Twin Spot](/twinspot). |
+
 <!-- screenshot-status:start -->
-All twelve previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
+All thirteen previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
 <!-- screenshot-status:end -->
 
-A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, the solo Slush Rush dispenser, and the shared Typo Hunt proofreading game, with an app switcher to the other Hedgies apps. Game state and presence live only in the Node.js process and reset whenever it restarts.
+A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, the solo Slush Rush dispenser, the shared Typo Hunt proofreading game, the Twin Spot card-matching race, with an app switcher to the other Hedgies apps. Game state and presence live only in the Node.js process and reset whenever it restarts.
 
 ## Run locally
 
@@ -41,7 +46,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 ### Visual assets
 
-Run `npm run screenshots:check` to verify all twelve showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to twelve PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+Run `npm run screenshots:check` to verify all thirteen showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to thirteen PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
 A cute lime-green gecko unifies the navigation bar, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
 
@@ -179,6 +184,16 @@ Open `/typohunt`. Everyone in the same arcade room races on the same passage: on
 - **Skip and answers.** *Skip · show answers* gives up on the passage for the whole room: no points are awarded, every missed mistake is revealed, and each answer (found or missed) lists the wrong word, the fix, the kind of mistake and a short reason (for example "a contraction needs an apostrophe where letters are missing"). The wrong word is shown in red and the fix in green, with no strikethrough.
 - **Next question is a click.** Rounds never start on their own. When all mistakes are found, time runs out or someone skips, the answers stay on screen until an active player presses *Next question*, which keeps everyone's scores. *Reset ranking* (or changing level) zeroes the scores for the room. Up to 20 players compete; anyone beyond that watches and cannot act. A player who disconnects keeps their score during the reconnect grace period.
 - **Server-authoritative.** The server alone knows which words are wrong; scores, penalties, finds and the clock never come from the browser, and the passage is withheld until the countdown ends.
+
+## Twin Spot
+
+Open `/twinspot`. Two round cards sit side by side and share exactly one symbol. Everyone in the same arcade room races to click it (on either card): a correct click scores, a wrong click deducts 25 points and locks that player out for one second. A live bar-chart ranking shows the room.
+
+- **Difficulty.** *Easy*: five emoji on each card. *Medium*: seven. *Hard*: seven symbols, but three on each card are shown as their word instead of the emoji, so the match can be an emoji on one card and its word on the other (or two words). Emoji come in different sizes and are rotated to a random angle; no country flags are used.
+- **Layout.** Every symbol is modelled as a capsule (a circle for an emoji, a long thin capsule for a rotated word) and placed where it has the most clear space, so items are spread across the card and never touch, even long words such as *elephant* or *scissors* turned at odd angles. Long words also get a smaller font.
+- **Dealing.** After a match only the clicked card is replaced. The card that stays on the table keeps its layout, and the new card shares exactly one symbol with it (never the symbol just found). Skipping a pair reveals the match and replaces one card at random. Changing the level or resetting the ranking deals two new cards and zeroes the scores.
+- **Scoring.** 100 / 150 / 200 points by difficulty plus up to 50 for speed. Up to 20 players compete; anyone beyond that watches and cannot act.
+- **Server-authoritative.** The server builds the cards, places every symbol so nothing overlaps, and alone decides whether a click is the match; the card data it sends carries no symbol ids.
 
 ## App switcher
 
