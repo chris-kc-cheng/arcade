@@ -262,10 +262,17 @@ async function capture() {
           await peer('tanks', 'Sam'); await peer('tanks', 'Jo');
           await waitFor(async () => (await tab.state('tankState'))?.players.length === 3, 'tank players');
         } else if (game === 'penalty') {
+          // A short shoot-out: goal, save, goal, goal. The shot is taken while the fourth result is on screen, so the tracker shows
+          // O, X, O and O and the GOAL banner is up. Both players choose through the real protocol.
           const sam = await peer('penalty', 'Sam');
-          await waitFor(async () => (await tab.state('penaltyState'))?.game.phase === 'choosing', 'penalty match');
-          await tab.send({ type: 'penaltyChoose', zone: 'top-left' }); sam.send({ type: 'penaltyChoose', zone: 'bottom-right' });
-          await waitFor(async () => (await tab.state('penaltyState'))?.game.phase === 'result', 'penalty result');
+          const kicks = [['top-left', 'bottom-right'], ['center', 'center'], ['bottom-left', 'top-right'], ['top-right', 'center']];
+          for (const [index, [first, second]] of kicks.entries()) {
+            await waitFor(async () => { const value = await tab.state('penaltyState'); return value?.game.phase === 'choosing' && value.game.kicks[0].length + value.game.kicks[1].length === index; }, `penalty kick ${index + 1}`);
+            await tab.send({ type: 'penaltyChoose', zone: first }); sam.send({ type: 'penaltyChoose', zone: second });
+            await waitFor(async () => (await tab.state('penaltyState'))?.game.phase === 'result', 'penalty result');
+            if (index < kicks.length - 1) await waitFor(async () => (await tab.state('penaltyState'))?.game.phase === 'choosing', 'next penalty');
+          }
+          await pause(1100);
         } else if (game === 'fighter') {
           const sam = await peer('fighter', 'Sam');
           await tab.send({ type: 'fighterInput', right: true }); sam.send({ type: 'fighterInput', left: true }); await pause(400);
