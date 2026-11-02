@@ -5,7 +5,7 @@
 | Drawing Board | Tank | Penalty Shootout |
 | --- | --- | --- |
 | <img src="public/screenshots/board.png" alt="Collaborative drawing board gameplay" width="320" height="180"> | <img src="public/screenshots/tank.png" alt="Tank arena gameplay" width="320" height="180"> | <img src="public/screenshots/penalty.png" alt="Penalty shootout gameplay" width="320" height="180"> |
-| Collaborate on a shared live drawing canvas with chat. | Drive a first-person 3D tank arena with mouse-box controls. | Take alternating penalty kicks in a two-player shootout. |
+| Collaborate on a shared live drawing canvas with chat. | Drive a first-person 3D tank arena with mouse-box controls. | World Cup style penalty shootout on a FIFA-accurate pitch, with an O/X tracker (O goal, X save). |
 
 | Line Fighter | Snake | Big-D |
 | --- | --- | --- |
@@ -172,6 +172,14 @@ Open `/cube`. Click the six face grids to cycle white, red, green, yellow, orang
 ## Slush Rush
 
 Open `/slushy` for a private 60-second slushy shift. Hold keys **1–4** or the matching dispenser levers with mouse/touch; release at the rim to serve automatically. S, M, L and XL cups have different fill times and point values. Clear domed lids hold another 24%: extra slush earns bonus points, but exceeding the dome spills the cup and triggers a cloth cleanup. The clock pauses during cleaning. Serve 3, 7 and 12 cups to unlock two, three and four simultaneous cups. Reset starts only your shift. Only the best score is shared, calculated by the server, and retained until the Node process restarts. Disconnected shifts pause and can reconnect within the normal 10-second grace period.
+
+## Penalty shootout
+
+Open `/penalty`. Two players take alternating penalties: the taker picks a corner of the goal, the keeper picks a side to dive, and both choices are locked in before the kick is taken. A kick is a goal unless the keeper dived to the zone it was aimed at. Each side takes five kicks (the shoot-out ends early once one side can no longer be caught), and a tie goes to sudden death.
+
+- **Real pitch.** The scene is drawn from true measurements in metres and projected through a camera behind the penalty mark, so the lines converge like a broadcast: goal 7.32 m wide and 2.44 m high, goal area 5.5 m from each post and 5.5 m deep, penalty area 16.5 m from each post and 16.5 m deep, penalty mark 11 m out on the line through the middle of the goal (22 cm across), and the penalty arc (the crescent) with a 9.15 m radius from the mark, drawn only outside the penalty area. Lines are 12 cm wide, the ball is 22 cm across, the keeper stands on the goal line, and the net has a sloping back. `test/penalty-scene.test.js` checks these numbers.
+- **Shoot-out tracker.** A World Cup style scorebug lists both sides with one circle per kick: **O** for a goal and **X** for a save, with a pulsing circle for the kick about to be taken. After five kicks each, sudden death adds one circle at a time. A GOAL! or SAVED! banner appears when the ball arrives.
+- **Controls.** Click a zone of the goal, or tab to it and press Enter or Space (each zone is a labelled button). The server still decides the result of every kick and the score.
 
 ## Typo Hunt
 
