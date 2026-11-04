@@ -48,7 +48,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 Run `npm run screenshots:check` to verify all thirteen showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to thirteen PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
-A cute lime-green gecko unifies the navigation bar, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` to regenerate them; see [icon source and output details](public/icons/README.md).
+The Arcade mark is a lime joystick on evergreen. It is one drawing (`public/icons/arcade.svg`) used by the toolbar, the browser favicon, the Apple touch icon and the installed app icons. Run `node scripts/generate-icons.js` (it needs Chrome or Chromium) to regenerate every PNG and the ICO from it; see [icon source and output details](public/icons/README.md).
 
 ## How HTTPS and WebSockets work
 
@@ -91,60 +91,32 @@ Stop it with:
 docker compose down
 ```
 
-## Deploy on Hostinger with Docker and Caddy
+## Deploy on the shared platform (Hostinger VPS)
 
-> This deployment requires a **Hostinger VPS** (or another plan with SSH and Docker access). Shared hosting cannot run this app because Arcade needs a persistent Node.js process and WebSocket connections.
+> This deployment requires a **Hostinger VPS** (or another host with SSH and Docker access). Shared hosting cannot run this app because Arcade needs a persistent Node.js process and WebSocket connections.
 
-The included multi-stage image builds the React application, removes development dependencies, runs as the unprivileged `node` user, and exposes a `/healthz` container health check.
+Arcade runs as one container (`arcade`, port 3000) on the platform's external Docker network `platform-edge`. The platform's single Caddy proxy routes `arcade.<domain>` to `arcade:3000` (WebSockets pass through automatically), and the optional login and the app list come from the platform (`auth.<domain>`, `apps.<domain>`). The route file lives in the **infrastructure repository**, not here; [`deploy/arcade.caddy.example`](deploy/arcade.caddy.example) is the file to copy. The full first-production cutover, with rollback, is in [docs/shared-infra.md](docs/shared-infra.md).
 
-1. Clone the repository on the VPS.
-2. Confirm the external network used by Caddy exists. The default expected name is `caddy`:
-
-   ```bash
-   docker network inspect caddy
-   ```
-
-3. If your network has a different name, provide it when deploying:
-
-   ```bash
-   CADDY_NETWORK=your-caddy-network docker compose -f compose.yaml -f compose.prod.yaml up -d --build
-   ```
-
-   Otherwise run:
-
-   ```bash
-   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
-   ```
-
-4. Add the following site to the Caddy container's configuration, replacing the hostname:
-
-   ```caddyfile
-   arcade.example.com {
-       encode zstd gzip
-       reverse_proxy arcade:3000
-   }
-   ```
-
-5. Reload Caddy and verify the application:
-
-   ```bash
-   docker compose -f compose.yaml -f compose.prod.yaml ps
-   docker compose -f compose.yaml -f compose.prod.yaml logs -f arcade
-   ```
-
-Caddy automatically proxies WebSocket upgrades. The Node port is exposed only to the shared Docker network and is not published on the VPS host.
+The multi-stage image builds the React application, removes development dependencies, runs as the unprivileged `node` user, and has a `/healthz` health check. `compose.prod.yaml` adds `container_name: arcade`, the network alias `arcade`, `restart: unless-stopped`, the health check and the optional `APPS_URL` setting; nothing is published on the host. `compose.yaml` and `compose.override.yaml` stay the local-development setup.
 
 Because state is in memory, run one Node.js instance for now. Multiple instances would need a shared pub/sub and state layer (such as Redis), which is a natural next step before scaling games horizontally.
 
+To start it by hand on the VPS (the platform network must already exist):
+
+```bash
+docker network inspect platform-edge
+docker compose --project-name arcade-shared -f compose.yaml -f compose.prod.yaml up -d --build
+docker compose --project-name arcade-shared -f compose.yaml -f compose.prod.yaml ps
+```
+
 ### Continuous deployment from GitHub
 
-The `Deploy production to Hostinger` GitHub Actions workflow targets the GitHub environment named `production`. It tests the app, builds the production Docker image, uploads an immutable source archive over SSH, and starts it with the production Compose configuration. It runs on pushes to `main` and can also be started manually from the Actions tab. Configure any required reviewers or deployment-branch restrictions under **Settings → Environments → production**.
+The `Deploy production to Hostinger` GitHub Actions workflow targets the GitHub environment named `production`. On every push to `main` (or a manual run) it tests the app, builds the browser bundle, validates the production image and the production Compose file, uploads an immutable source archive over SSH, and `deploy/hostinger-deploy.sh` builds and starts the container **on the server** (no container registry is involved). The script first checks that the `platform-edge` network exists, then runs `docker compose config --quiet` and `up -d --build --remove-orphans` as the Compose project `arcade-shared`, and waits for the health check.
 
 Prepare the VPS once:
 
 ```bash
-# Run as the SSH deployment user. Docker must already be installed.
-docker network create caddy
+# Run as the SSH deployment user. Docker must already be installed and the platform infrastructure running.
 sudo mkdir -p /opt/arcade/releases
 sudo chown -R "$USER:$USER" /opt/arcade
 ```
@@ -159,11 +131,10 @@ Add these repository **Actions secrets** under **Settings → Secrets and variab
 | `HOSTINGER_KNOWN_HOSTS` | Pinned host-key line from `ssh-keyscan -H your-vps-host` after verifying its fingerprint in Hostinger |
 | `HOSTINGER_SSH_PORT` | SSH port; optional, defaults to `22` |
 | `HOSTINGER_DEPLOY_PATH` | Release directory; optional, defaults to `/opt/arcade` |
-| `CADDY_NETWORK` | External Docker network; optional, defaults to `caddy` |
 
-Add the matching public key to `~/.ssh/authorized_keys` on the VPS. Keep the Caddy site configuration shown above in the Caddy deployment, and ensure both Caddy and Arcade use the same external network. Then push to `main`, or run **Deploy production to Hostinger** with `workflow_dispatch`.
+The former `CADDY_NETWORK` secret is no longer used and can be deleted. An optional settings file `${HOSTINGER_DEPLOY_PATH}/.env` (for example `APPS_URL=...`) is read by Compose when it exists and is never created, changed or deleted by a deploy.
 
-Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, including the generated browser bundle at `public/react-app.js`. After the container health check succeeds, `HOSTINGER_DEPLOY_PATH/current` points to the active release's `public` directory, so `index.html` and `react-app.js` are directly available beneath `current`. Failed startups print the last container logs, and the workflow deliberately prevents concurrent production deployments.
+Each deployment keeps the three most recent inactive releases under `HOSTINGER_DEPLOY_PATH/releases`, including the generated browser bundle at `public/react-app.js`. After the container health check succeeds, `HOSTINGER_DEPLOY_PATH/current` points to the active release's `public` directory.
 
 ## Cube Lab
 
@@ -203,10 +174,32 @@ Open `/twinspot`. Two round cards sit side by side and share exactly one symbol.
 - **Scoring.** 100 / 150 / 200 points by difficulty plus up to 50 for speed. Up to 20 players compete; anyone beyond that watches and cannot act.
 - **Server-authoritative.** The server builds the cards, places every symbol so nothing overlaps, and alone decides whether a click is the match; the card data it sends carries no symbol ids.
 
+## Toolbar
+
+Every page shares one calm, fully fluid toolbar (`public/platform.js` and `public/platform.css`). On the left are the Arcade mark (it links home) and the current game's name, which opens the list of all thirteen games. On the right are a few icon buttons:
+
+| Button | What it does |
+| --- | --- |
+| People icon and number | The count of active players. Hover, focus or click reveals each player's name, IP address, room and connected time. |
+| Reset | The game's reset control (it keeps its own label, such as "Reset match"). It never gives spectators control. |
+| Door icon | Opens **Room and player**: your player name, the named rooms, **New room**, and the protocol log. |
+| Nine dots | The other apps on the shared platform. Hidden when the platform's app list cannot be read. |
+| **Log in** / your name | The optional shared login (below). |
+
+![The toolbar at 1280, 768 and 320 pixels wide, and the 320 pixel login dialog](public/screenshots/toolbar.png)
+
+Layout rules: sizes are in `rem`, nothing in the bar has a fixed text width, long titles truncate with an ellipsis and a tooltip, and the right-hand group wraps below the title on phones from 320 px wide. Labels collapse into icon-only buttons under 40 rem, every button keeps its `aria-label` and tooltip, touch targets are at least 44 px, keyboard focus is always visible, menus open with Enter or Space, move with the arrow keys and close with Escape (focus returns to the button), colours follow `prefers-color-scheme`, and transitions are off under `prefers-reduced-motion`. The icons are inline SVG line icons on a 24 px grid with a 2 px `currentColor` stroke; there is no icon font and no emoji in the interface.
+
+## Optional login
+
+Nobody has to log in: every game works anonymously, exactly as before, and a slow or unreachable login service never delays a game. On load the page asks the platform's auth service (`https://auth.hedgies.cloud/me`, with the shared `sso_access` cookie) who you are. If you are signed in, your name appears in the toolbar and fills the player-name field in every game; you can still type another name, and a name you type wins for the rest of the session. If you are not, a small **Log in** button opens a dialog with email-or-username and password, **Continue with Google**, **Continue with Microsoft** and **Forgot password**. There is no sign-up form: new accounts are enabled by an administrator, and the dialog shows the server's message (for example "waiting for an administrator to enable it"). An OAuth return with `?auth_error=...` is shown in the dialog and removed from the address. **Log out** ends the session and clears a name that came from the account.
+
+The client is `public/sso.js` (the same contract as the infrastructure repository's `clients/js/sso-auth.js`, including the single `/refresh` retry after a 401), loaded before `platform.js` on every page. The name is **display only**: the Arcade server does not verify the cookie, adds no authorization and stores nothing per user. The auth address can be changed for a test environment by setting `window.ARCADE_SSO_BASE` before `platform.js` loads.
+
 ## App switcher
 
-The nine-dot button at the far right of every top bar opens the other Hedgies apps. The server reads the live list from <https://www.hedgies.cloud/app.json> (override with `APP_LIST_URL`), hides this app by its `id` (`arcade`, override with `APP_ID`), and takes each app's name and icon from that app's own PWA manifest (the page's `<link rel=manifest>`, otherwise `manifest.webmanifest`). Nothing about the other apps is hard coded. The browser calls `/api/apps` on this origin, so no CORS headers are needed; only https URLs named by the list are fetched, results are cached for a minute, and the menu says so if the list cannot be loaded. Apps open in a new tab.
+The nine-dot button in the toolbar opens the other apps on the shared platform. The server (`GET /api/platform-apps`, `lib/apps.js`) reads the platform's registry from `APPS_URL` (default <https://apps.hedgies.cloud/app.json>; set it to an empty value to turn the switcher off), hides this app by its `id` (`arcade`), and takes each app's name and icon from that app's own page and web manifest (`<link rel=manifest>`, otherwise `manifest.webmanifest`; a small `apple-touch-icon` wins over a huge manifest image). Nothing about the other apps is hard coded. Every fetch is https-only, refuses private and loopback addresses (also after redirects and on the address actually connected to), reads at most 512 KB, and results are cached for ten minutes; when the registry cannot be read the last good list is served, and with none the list is empty, so the browser hides the button. Apps open in a new tab.
 
 ## Named arcade rooms
 
-Use **ROOMS** in the shared top bar to see each room's random name, current game and player count. Choose **NEW ROOM** to start a separate room or select another room to join its game. Game switches, drawing, chat, matches and resets affect only your room. Your room selection is kept for this browser tab across game changes and reconnects. Empty rooms disappear from the directory immediately and are destroyed after a 10-second reconnect grace period, including all game state, timers and cube-solving workers. Rooms and game state reset when the server restarts. Slush Rush shifts remain private and its best score is shared across all rooms. Slushy dispensing is now twice as fast (a small cup reaches the rim in about 1.2 seconds).
+Use the door button in the shared toolbar (**Room and player**) to see each room's random name, current game and player count. Choose **New room** to start a separate room or select another room to join its game. Game switches, drawing, chat, matches and resets affect only your room. Your room selection is kept for this browser tab across game changes and reconnects. Empty rooms disappear from the directory immediately and are destroyed after a 10-second reconnect grace period, including all game state, timers and cube-solving workers. Rooms and game state reset when the server restarts. Slush Rush shifts remain private and its best score is shared across all rooms. Slushy dispensing is now twice as fast (a small cup reaches the rim in about 1.2 seconds).

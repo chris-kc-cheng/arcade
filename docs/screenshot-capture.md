@@ -65,7 +65,8 @@ The Typo Hunt scene switches the room to level 5 and waits for the countdown. Th
 - Every scene runs in its own freshly created arcade room, and the capture tab and its peers are told that room explicitly, so a previous scene's closing tab can never leak into the next one.
 - On Windows set `CHROME_BIN` to the browser executable (for example `C:\Program Files\Google\Chrome\Application\chrome.exe`); `which` is not available there.
 - `CAPTURE_ONLY=typohunt,slushy npm run screenshots` captures just those scenes into a temporary preview folder (printed at the end, or set `CAPTURE_PREVIEW_DIR`) without touching the repository, which is handy for reviewing one scene.
-- The app switcher button appears in every top bar, so all thirteen captures were refreshed together.
+- The shared toolbar appears in every capture, so all thirteen captures are refreshed together whenever it changes. The capture server runs with `APPS_URL` empty, so the app-switcher button is hidden and the images do not depend on the platform registry; the optional login cannot reach the auth service from the local capture origin, so every capture shows the anonymous **Log in** button.
+- `node scripts/capture-toolbar.js` writes `public/screenshots/toolbar.png`: the toolbar at 1280, 768 and 320 CSS pixels wide, plus the 320 px login dialog (the narrow views are real iframes, so their media queries see the narrow viewport). It uses the same Chrome lookup and `CHROME_BIN`.
 
 ## Twin Spot capture
 

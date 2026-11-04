@@ -1,15 +1,34 @@
+# Production on the shared platform: the container joins the platform's external proxy network and is reached by the
+# platform proxy as arcade:3000 (route file sites/arcade.caddy in the infrastructure repository). Nothing is published on the host.
+# The project name is deliberately not "arcade": the previous production container belongs to that project, and this one
+# must be able to start beside it until the route has been switched (see docs/shared-infra.md).
+name: arcade-shared
+
 services:
   arcade:
     build:
       target: production
-    image: arcade:latest
+    image: arcade:platform
+    container_name: arcade
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      PORT: "3000"
+      # Optional. Where the toolbar's app switcher reads the platform's app list. Unset: the platform default.
+      # Set to an empty value to hide the switcher.
+      APPS_URL: ${APPS_URL-https://apps.hedgies.cloud/app.json}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:http').get('http://127.0.0.1:3000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
-      - caddy
+      platform-edge:
+        aliases:
+          - arcade
 
 networks:
-  caddy:
+  platform-edge:
     external: true
-    name: ${CADDY_NETWORK:-caddy}
+    name: ${PLATFORM_EDGE_NETWORK:-platform-edge}

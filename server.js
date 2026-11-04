@@ -17,6 +17,7 @@ const { createAppDirectory } = require('./lib/apps');
 const { Worker } = require('node:worker_threads');
 const { Cube, faces: cubeFaces, solved: solvedCube, validate: validateCube, cleanAction: cleanCubeAction } = require('./lib/cube');
 const PORT = Number(process.env.PORT) || 3000;
+const NAME_CHANGE_INTERVAL_MS = 300;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
@@ -42,14 +43,15 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
-  if (pathname === '/api/apps') {
-    // The shared Hedgies app list for the top-bar app switcher, read live and served from this origin so browsers need no CORS.
+  if (pathname === '/api/platform-apps') {
+    // The other apps on the shared platform for the toolbar app switcher, read live and served from this origin so browsers
+    // need no CORS. An empty list (registry unconfigured or unreachable) makes the toolbar hide the switcher.
     appDirectory.list().then(apps => {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' });
       res.end(JSON.stringify(apps));
     }, () => {
-      res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ error: 'The app list is unavailable.' }));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end('[]');
     });
     return;
   }
@@ -319,11 +321,22 @@ function registerPlatformSocket(socket, request, key, room) {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
     if (!message || typeof message !== 'object') return;
-    if (message.type !== 'setName' || profile.customName) return;
+    if (message.type !== 'setName' || typeof message.name !== 'string') return;
+    // The player name is display only (typed in the toolbar, or filled in from the optional shared login); it grants nothing.
+    // It can change during a session; an empty name goes back to the generated "User N". Changes are rate limited.
+    const now = Date.now();
+    if (now - (profile.nameChangedAt || 0) < NAME_CHANGE_INTERVAL_MS) return;
     const name = cleanName(message.name);
-    if (!name) return;
-    profile.name = name;
-    profile.customName = true;
+    if (!name) {
+      if (!profile.customName) return;
+      profile.name = nextAvailableUserName();
+      profile.customName = false;
+    } else {
+      if (name === profile.name) return;
+      profile.name = name;
+      profile.customName = true;
+    }
+    profile.nameChangedAt = now;
     broadcastPlatformPresence();
   });
   socket.on('close', () => {

@@ -21,7 +21,6 @@ jobs:
     env:
       DEPLOY_PATH: ${{ secrets.HOSTINGER_DEPLOY_PATH }}
       SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
-      CADDY_NETWORK: ${{ secrets.CADDY_NETWORK }}
     steps:
       - name: Check out the selected revision
         uses: actions/checkout@v4
@@ -41,8 +40,10 @@ jobs:
       - name: Build browser bundle
         run: npm run build
 
-      - name: Validate production image
-        run: docker build --target production -t arcade:${GITHUB_SHA} .
+      - name: Validate production image and Compose file
+        run: |
+          docker build --target production -t arcade:${GITHUB_SHA} .
+          docker compose -f compose.yaml -f compose.prod.yaml config --quiet
 
       - name: Configure SSH
         env:
@@ -84,7 +85,6 @@ jobs:
           set -eu
           SSH_PORT="${SSH_PORT:-22}"
           DEPLOY_PATH="${DEPLOY_PATH:-/opt/arcade}"
-          CADDY_NETWORK="${CADDY_NETWORK:-caddy}"
           ssh -p "$SSH_PORT" "$HOSTINGER_USER@$HOSTINGER_HOST" \
-            bash -s -- "$DEPLOY_PATH" "$GITHUB_SHA" "$CADDY_NETWORK" \
+            bash -s -- "$DEPLOY_PATH" "$GITHUB_SHA" platform-edge \
             < deploy/hostinger-deploy.sh
