@@ -15,6 +15,12 @@
     return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, NAME_LENGTH).trim() : '';
   }
 
+  /** The auth service answers `{ user: {...}, session_id, expires_at, ... }`; the account itself is the `user` part. */
+  function unwrapUser(data) {
+    if (!data || typeof data !== 'object') return null;
+    return data.user && typeof data.user === 'object' ? data.user : data;
+  }
+
   /** The name to show for a signed-in account: its name, else the part of the email before the @. */
   function accountName(user) {
     if (!user || typeof user !== 'object') return '';
@@ -85,17 +91,17 @@
       base,
       /** The signed-in account, or null. Never throws: any failure means "not signed in" so a game is never held up. */
       async me() {
-        try { return await call('/me'); } catch (error) {
+        try { return unwrapUser(await call('/me')); } catch (error) {
           if (error.status !== 401) return null;
-          try { await call('/refresh', { method: 'POST' }); return await call('/me'); } catch { return null; }
+          try { await call('/refresh', { method: 'POST' }); return unwrapUser(await call('/me')); } catch { return null; }
         }
       },
-      login: (identifier, password) => call('/login', { method: 'POST', body: { email: identifier, password }, timeout: 15000 }),
+      login: async (identifier, password) => unwrapUser(await call('/login', { method: 'POST', body: { email: identifier, password }, timeout: 15000 })),
       logout: () => call('/logout', { method: 'POST' }),
       forgotPassword: (email, returnTo = locationHref().split(/[?#]/)[0]) => call('/forgot-password', { method: 'POST', body: { email, return_to: returnTo }, timeout: 15000 }),
       providerUrl: (provider, returnTo = locationHref()) => `${base}/${provider}/start?return_to=${encodeURIComponent(returnTo)}`
     };
   }
 
-  return { DEFAULT_BASE, NAME_LENGTH, cleanName, accountName, resolvePlayerName, takeAuthError, createSso };
+  return { DEFAULT_BASE, NAME_LENGTH, unwrapUser, cleanName, accountName, resolvePlayerName, takeAuthError, createSso };
 });
