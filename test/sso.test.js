@@ -104,3 +104,11 @@ test('logout, forgot password and the provider links use the platform contract',
   assert.equal(sso.providerUrl('google'), `${DEFAULT_BASE}/google/start?return_to=${encodeURIComponent('https://arcade.hedgies.cloud/snake?room=a#x')}`);
   assert.equal(sso.providerUrl('microsoft', 'https://a.example/'), `${DEFAULT_BASE}/microsoft/start?return_to=https%3A%2F%2Fa.example%2F`);
 });
+
+test('the real /me and /login answers wrap the account in a user field', async () => {
+  const wrapped = { user: { id: 1, email: 'ada@example.com', name: 'Ada Lovelace' }, session_id: 5, expires_in: 900 };
+  const sso = createSso({ fetchImpl: fakeFetch(json(200, wrapped), json(200, wrapped)).fetchImpl });
+  assert.equal((await sso.me()).name, 'Ada Lovelace');
+  assert.equal(accountName(await sso.login('ada', 'pw')), 'Ada Lovelace');
+  assert.equal(accountName(wrapped.user), 'Ada Lovelace');
+});
