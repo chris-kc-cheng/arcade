@@ -42,14 +42,15 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
-  if (pathname === '/api/apps') {
-    // The shared Hedgies app list for the top-bar app switcher, read live and served from this origin so browsers need no CORS.
+  if (pathname === '/api/platform-apps') {
+    // The other apps on the shared platform for the toolbar app switcher, read live and served from this origin so browsers
+    // need no CORS. An empty list (registry unconfigured or unreachable) makes the toolbar hide the switcher.
     appDirectory.list().then(apps => {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' });
       res.end(JSON.stringify(apps));
     }, () => {
-      res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ error: 'The app list is unavailable.' }));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end('[]');
     });
     return;
   }
