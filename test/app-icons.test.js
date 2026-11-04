@@ -14,8 +14,7 @@ function pngPixels(bytes) {
   assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
   assert.equal(bytes[24], 8, 'icons must use 8-bit channels');
-  assert.ok(bytes[25] === 6 || bytes[25] === 2, 'icons must use RGB or RGBA channels');
-  const channels = bytes[25] === 6 ? 4 : 3;
+  assert.equal(bytes[25], 6, 'icons must use RGBA channels');
   assert.equal(bytes[28], 0, 'icons must not be interlaced');
   const chunks = [];
   for (let offset = 8; offset < bytes.length;) {
@@ -23,8 +22,8 @@ function pngPixels(bytes) {
     if (bytes.toString('ascii', offset + 4, offset + 8) === 'IDAT') chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
     offset += length + 12;
   }
-  const raw = zlib.inflateSync(Buffer.concat(chunks)), stride = width * channels;
-  const decoded = Buffer.alloc(stride * height);
+  const raw = zlib.inflateSync(Buffer.concat(chunks)), stride = width * 4;
+  const pixels = Buffer.alloc(stride * height);
   const paeth = (left, up, corner) => {
     const prediction = left + up - corner;
     const a = Math.abs(prediction - left), b = Math.abs(prediction - up), c = Math.abs(prediction - corner);
@@ -35,16 +34,13 @@ function pngPixels(bytes) {
     assert.ok(filter <= 4);
     for (let x = 0; x < stride; x++) {
       const index = y * stride + x;
-      const left = x >= channels ? decoded[index - channels] : 0;
-      const up = y ? decoded[index - stride] : 0;
-      const corner = y && x >= channels ? decoded[index - stride - channels] : 0;
+      const left = x >= 4 ? pixels[index - 4] : 0;
+      const up = y ? pixels[index - stride] : 0;
+      const corner = y && x >= 4 ? pixels[index - stride - 4] : 0;
       const predictors = [0, left, up, Math.floor((left + up) / 2), paeth(left, up, corner)];
-      decoded[index] = (raw[y * (stride + 1) + x + 1] + predictors[filter]) & 255;
+      pixels[index] = (raw[y * (stride + 1) + x + 1] + predictors[filter]) & 255;
     }
   }
-  if (channels === 4) return { width, height, pixels: decoded };
-  const pixels = Buffer.alloc(width * height * 4);
-  for (let pixel = 0; pixel < width * height; pixel++) { decoded.copy(pixels, pixel * 4, pixel * 3, pixel * 3 + 3); pixels[pixel * 4 + 3] = 255; }
   return { width, height, pixels };
 }
 
@@ -126,26 +122,12 @@ test('Apple touch icon is opaque at 180px and ICO contains 16/32/48px images', (
     assert.equal(frame.width, size);
     assert.equal(frame.height, size);
   }
-  // The 16 px frame must still read as the mark: evergreen ground with a clear patch of lime.
-  const small = pngPixels(ico.subarray(ico.readUInt32LE(6 + 12), ico.readUInt32LE(6 + 12) + ico.readUInt32LE(6 + 8)));
-  let lime = 0, ground = 0;
-  for (let offset = 0; offset < small.pixels.length; offset += 4) {
-    const [r, g, b, a] = small.pixels.subarray(offset, offset + 4);
-    if (a > 250 && Math.abs(r - 185) < 12 && Math.abs(g - 243) < 12 && Math.abs(b - 107) < 20) lime++;
-    if (a > 250 && r === 15 && g === 39 && b === 35) ground++;
-  }
-  assert.ok(lime >= 40 && ground >= 40, `16 px icon keeps lime (${lime}) on evergreen (${ground})`);
-});
-
-test('the vector icons are self-contained drawings of the Arcade joystick', () => {
-  for (const file of ['icons/arcade.svg', 'favicon.svg']) {
-    const svg = read(file).toString();
-    assert.match(svg, /<title id="title">Arcade joystick<\/title>/, file);
-    assert.doesNotMatch(svg, /<image|href=|<script|<style|@import|https?:\/\/(?!www\.w3\.org)/, `${file} has no external or embedded raster content`);
-    assert.match(svg, /viewBox="0 0 64 64"/, file);
-  }
-  assert.equal(read('icons/arcade.svg').toString(), read('favicon.svg').toString().replace('width="64" height="64"', 'width="512" height="512"'), 'one drawing for both');
-  assert.match(read('platform.js').toString(), /<rect x="29" y="25" width="6" height="19" rx="3" fill="#b9f36b"\/><circle cx="32" cy="19" r="10" fill="#b9f36b"\/>/, 'the toolbar mark is the same drawing');
+  assert.match(read('icons/arcade.svg').toString(), /href="gecko-source\.png"/, 'source uses the maintained gecko artwork');
+  const favicon = read('favicon.svg').toString();
+  assert.match(favicon, /Arcade gecko/);
+  const embedded = favicon.match(/href="data:image\/png;base64,([^"]+)"/);
+  assert.ok(embedded, 'SVG favicon embeds its artwork without an external image request');
+  assert.equal(pngPixels(Buffer.from(embedded[1], 'base64')).width, 256);
 });
 
 test('HTTP serves the manifest and icon formats with their correct content types', async t => {

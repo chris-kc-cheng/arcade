@@ -14,7 +14,6 @@
     "test": "node --test",
     "screenshots": "npm run build && node scripts/capture-screenshots.js",
     "screenshots:check": "node scripts/capture-screenshots.js --check",
-    "icons": "node scripts/generate-icons.js",
     "screenshots:toolbar": "node scripts/capture-toolbar.js"
   },
   "engines": {
