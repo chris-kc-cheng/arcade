@@ -48,7 +48,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 Run `npm run screenshots:check` to verify all thirteen showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to thirteen PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
-The Arcade mark is a lime joystick on evergreen. It is one drawing (`public/icons/arcade.svg`) used by the toolbar, the browser favicon, the Apple touch icon and the installed app icons. Run `node scripts/generate-icons.js` (it needs Chrome or Chromium) to regenerate every PNG and the ICO from it; see [icon source and output details](public/icons/README.md).
+A cute lime-green gecko unifies the toolbar logo, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` (needs Inkscape) to regenerate them; see [icon source and output details](public/icons/README.md).
 
 ## How HTTPS and WebSockets work
 
@@ -176,7 +176,7 @@ Open `/twinspot`. Two round cards sit side by side and share exactly one symbol.
 
 ## Toolbar
 
-Every page shares one calm, fully fluid toolbar (`public/platform.js` and `public/platform.css`). On the left are the Arcade mark (it links home) and the current game's name, which opens the list of all thirteen games. On the right are a few icon buttons:
+Every page shares one calm, fully fluid toolbar (`public/platform.js` and `public/platform.css`). On the left are the gecko logo (it links home) and the current game's name, which opens the list of all thirteen games. On the right are a few icon buttons:
 
 | Button | What it does |
 | --- | --- |
@@ -184,7 +184,7 @@ Every page shares one calm, fully fluid toolbar (`public/platform.js` and `publi
 | Reset | The game's reset control (it keeps its own label, such as "Reset match"). It never gives spectators control. |
 | Door icon | Opens **Room and player**: your player name, the named rooms, **New room**, and the protocol log. |
 | Nine dots | The other apps on the shared platform. Hidden when the platform's app list cannot be read. |
-| **Log in** / your name | The optional shared login (below). |
+| **Log in** / your first name | The optional shared login (below). |
 
 ![The toolbar at 1280, 768 and 320 pixels wide, and the 320 pixel login dialog](public/screenshots/toolbar.png)
 

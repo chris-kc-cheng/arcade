@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">Arcade joystick</title>
-  <desc id="desc">A lime-green arcade joystick with a round ball top and a coral button, on evergreen.</desc>
+  <title id="title">Arcade gecko</title>
+  <desc id="desc">A cute smiling lime-green gecko with big cream eyes, round toe pads and a curled coral-spotted tail on evergreen.</desc>
   <rect width="64" height="64" rx="14" fill="#0f2723"/>
-  <g><rect x="29" y="25" width="6" height="19" rx="3" fill="#b9f36b"/><circle cx="32" cy="19" r="10" fill="#b9f36b"/><rect x="10" y="40" width="44" height="14" rx="7" fill="#b9f36b"/><circle cx="21" cy="47" r="2.6" fill="#ff8f73"/><circle cx="43" cy="47" r="2.6" fill="#0f2723"/></g>
+  <g id="gecko"><image href="gecko-source.png" x="8" y="8" width="48" height="48" preserveAspectRatio="xMidYMid meet"/></g>
 </svg>

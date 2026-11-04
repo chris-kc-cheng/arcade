@@ -55,10 +55,10 @@ header.arcade-topbar .arcade-account-toggle[aria-haspopup=dialog]:hover{color:va
 
 /* Popovers dock under the bar, so they never run off a narrow screen. */
 header.arcade-topbar .arcade-panel{position:fixed;top:calc(var(--arcade-topbar-height,3.5rem) + .25rem);right:max(.75rem,env(safe-area-inset-right));left:auto;z-index:5;width:min(22rem,calc(100vw - 1.5rem));max-height:calc(100dvh - var(--arcade-topbar-height,3.5rem) - 1rem);overflow:auto;margin:0;padding:.5rem;border:1px solid var(--ab-line);border-radius:1rem;background:var(--ab-panel);color:var(--ab-fg);box-shadow:var(--ab-shadow);text-align:left;white-space:normal;overflow-wrap:anywhere}
-header.arcade-topbar .arcade-nav{left:max(.75rem,env(safe-area-inset-left));right:auto;display:grid;gap:.125rem;width:min(18rem,calc(100vw - 1.5rem))}
-header.arcade-topbar .arcade-nav a{display:flex;align-items:center;gap:.75rem;min-height:var(--ab-target);padding:0 .75rem;border-radius:.625rem;color:inherit;font:600 .9375rem/1.2 var(--ab-font);text-decoration:none}
+header.arcade-topbar .arcade-nav{order:0;height:auto;flex-wrap:nowrap;left:max(.75rem,env(safe-area-inset-left));right:auto;display:grid;gap:.125rem;width:min(18rem,calc(100vw - 1.5rem))}
+header.arcade-topbar .arcade-nav a{display:flex;place-items:normal;align-items:center;gap:.75rem;width:auto;height:auto;min-width:0;min-height:var(--ab-target);margin:0;padding:0 .75rem;border:0;border-radius:.625rem;background:transparent;text-align:left;color:inherit;font:600 .9375rem/1.2 var(--ab-font);text-decoration:none}
 header.arcade-topbar .arcade-nav a:hover{background:var(--ab-hover)}
-header.arcade-topbar .arcade-nav a[aria-current=page]{background:var(--ab-accent);color:var(--ab-on-accent)}
+header.arcade-topbar .arcade-nav a[aria-current=page]{background:var(--ab-accent);color:var(--ab-on-accent);border-radius:.625rem}
 header.arcade-topbar .arcade-nav a span{min-width:0}
 header.arcade-topbar .arcade-player-details{top:calc(var(--arcade-topbar-height,3.5rem) - .25rem);padding:.25rem}
 header.arcade-topbar .arcade-player-details>div{display:flex;flex-direction:column;gap:.125rem;padding:.5rem .625rem;font-size:.875rem;line-height:1.4}

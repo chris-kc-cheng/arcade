@@ -273,7 +273,7 @@ test('a signed-in visitor sees their name in the toolbar and in the name field, 
   const env = platform('snake', false, {fetchImpl:auth.fetchImpl}); env.connect(); await tick();
   assert.equal(env.storage.get('arcade-name'),'Ada Lovelace'); assert.equal(env.storage.get('arcade-name-source'),'account');
   assert.equal(env.header.querySelector('.arcade-name input').value,'Ada Lovelace');
-  assert.equal(env.header.querySelector('.arcade-account-label').textContent,'Ada Lovelace');
+  assert.equal(env.header.querySelector('.arcade-account-label').textContent,'Ada');
   assert.equal(env.header.querySelector('.arcade-account-toggle').getAttribute('aria-label'),'Account: Ada Lovelace');
   assert.deepEqual(env.sent.filter(message => message.type === 'setName'),[{type:'setName',name:'Ada Lovelace'}],'an already-connected game learns the name');
 });
@@ -348,7 +348,7 @@ test('logging in shows the server message on 401, 403 and 429, and signs in on s
     assert.match(message.textContent,text); assert.equal(env.header.querySelector('.arcade-modal').hidden,false); assert.equal(pw.value,'','the password is cleared after a failure');
   }
   reply = ok(signedIn); id.value = 'ada'; pw.value = 'secret'; form.onsubmit({preventDefault() {}}); await tick(); await tick(); await tick();
-  assert.equal(env.header.querySelector('.arcade-modal').hidden,true); assert.equal(env.storage.get('arcade-name'),'Ada Lovelace'); assert.equal(env.header.querySelector('.arcade-account-label').textContent,'Ada Lovelace');
+  assert.equal(env.header.querySelector('.arcade-modal').hidden,true); assert.equal(env.storage.get('arcade-name'),'Ada Lovelace'); assert.equal(env.header.querySelector('.arcade-account-label').textContent,'Ada');
   assert.ok(env.sent.some(item => item.type === 'setName' && item.name === 'Ada Lovelace'));
 });
 
