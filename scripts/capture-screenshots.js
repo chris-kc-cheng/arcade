@@ -98,7 +98,7 @@ async function capture() {
   process.once('SIGINT', cleanup); process.once('SIGTERM', cleanup);
   try {
     const port = await freePort(), origin = `http://127.0.0.1:${port}`;
-    const server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] }); children.push(server);
+    const server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { ...process.env, PORT: String(port), APPS_URL: '' }, stdio: ['ignore', 'pipe', 'pipe'] }); children.push(server);
     let serverOutput = '', serverError; server.on('error', error => serverError = error); server.stdout.on('data', chunk => serverOutput += chunk); server.stderr.on('data', chunk => serverOutput += chunk);
     await waitFor(() => {
       if (serverError) throw serverError;

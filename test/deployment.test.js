@@ -16,14 +16,36 @@ test('default compose command starts a localhost development server', () => {
   assert.match(local, /arcade_node_modules:\/app\/node_modules/);
 });
 
-test('production compose keeps Arcade private and attached to Caddy', () => {
+test('production compose joins the shared platform network as arcade:3000 and publishes nothing', () => {
   const base = read('compose.yaml');
   const production = read('compose.prod.yaml');
 
-  assert.match(base, /expose:\s*\n\s*- ["']3000["']/);
+  const squash = text => text.replace(/\s+/g, ' ');
+  assert.match(squash(base), /expose: - ["']3000["']/);
   assert.doesNotMatch(base, /ports:/);
-  assert.match(production, /external:\s*true/);
-  assert.match(production, /name: \$\{CADDY_NETWORK:-caddy\}/);
+  assert.doesNotMatch(production, /ports:/);
+  assert.match(production, /^name: arcade-shared$/m, 'a project of its own, so it can start beside the previous container');
+  assert.match(production, /container_name: arcade$/m);
+  assert.match(production, /restart: unless-stopped/);
+  assert.match(production, /healthcheck:/);
+  assert.match(squash(production), /aliases: - arcade/);
+  assert.match(squash(production), /platform-edge: external: true name: \$\{PLATFORM_EDGE_NETWORK:-platform-edge\}/);
+  assert.match(production, /APPS_URL: \$\{APPS_URL-https:\/\/apps\.hedgies\.cloud\/app\.json\}/);
+  assert.doesNotMatch(production, /CADDY_NETWORK|ghcr/);
+});
+
+test('the deploy script guards the platform network, validates Compose and never touches the env file', () => {
+  const script = read('deploy/hostinger-deploy.sh');
+  const workflow = read('.github/workflows/deploy-hostinger.yml');
+
+  assert.match(script, /docker network inspect "\$edge_network"/);
+  assert.match(script, /config --quiet/);
+  assert.match(script, /up -d --build --remove-orphans/);
+  assert.match(script, /project=arcade-shared/);
+  assert.equal(script.split('\n').filter(line => /^\s*(rm|tee|cp|mv)\b/.test(line) && line.includes('.env')).length, 0, 'the settings file is only ever read');
+  assert.match(workflow, /platform-edge/);
+  assert.doesNotMatch(workflow, /CADDY_NETWORK|ghcr|docker login|docker push/);
+  assert.match(workflow, /docker compose -f compose\.yaml -f compose\.prod\.yaml config --quiet/);
 });
 
 test('Hostinger workflow tests before invoking the deployment script', () => {

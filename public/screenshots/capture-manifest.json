@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-11-01T18:09:20.449Z",
+  "capturedAt": "2026-11-04T12:38:39.677Z",
   "method": "Chromium CDP, local server, 100% scale",
   "scenes": [
     {
@@ -58,16 +58,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -129,16 +133,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -200,16 +208,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -271,16 +283,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -342,16 +358,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -413,16 +433,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -484,16 +508,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -555,16 +583,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1905,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1905,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1905
@@ -626,16 +658,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920
@@ -697,16 +733,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1905,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1905,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1905
@@ -768,16 +808,20 @@
           {
             "href": "/typohunt",
             "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": null
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1905,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1905,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1905
@@ -839,16 +883,95 @@
           {
             "href": "/typohunt",
             "current": "page"
+          },
+          {
+            "href": "/twinspot",
+            "current": null
+          }
+        ],
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 1905,
+          "height": 56,
+          "top": 0,
+          "right": 1905,
+          "bottom": 56,
+          "left": 0
+        },
+        "scrollWidth": 1905
+      }
+    },
+    {
+      "game": "twinspot",
+      "route": "/twinspot",
+      "width": 1920,
+      "height": 1080,
+      "syntheticParticipants": true,
+      "navigation": {
+        "path": "/twinspot",
+        "links": [
+          {
+            "href": "/",
+            "current": null
+          },
+          {
+            "href": "/tank",
+            "current": null
+          },
+          {
+            "href": "/penalty",
+            "current": null
+          },
+          {
+            "href": "/fighter",
+            "current": null
+          },
+          {
+            "href": "/snake",
+            "current": null
+          },
+          {
+            "href": "/bigtwo",
+            "current": null
+          },
+          {
+            "href": "/typing",
+            "current": null
+          },
+          {
+            "href": "/wordle",
+            "current": null
+          },
+          {
+            "href": "/poll",
+            "current": null
+          },
+          {
+            "href": "/cube",
+            "current": null
+          },
+          {
+            "href": "/slushy",
+            "current": null
+          },
+          {
+            "href": "/typohunt",
+            "current": null
+          },
+          {
+            "href": "/twinspot",
+            "current": "page"
           }
         ],
         "header": {
           "x": 0,
           "y": 0,
           "width": 1920,
-          "height": 76,
+          "height": 56,
           "top": 0,
           "right": 1920,
-          "bottom": 76,
+          "bottom": 56,
           "left": 0
         },
         "scrollWidth": 1920

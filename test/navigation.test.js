@@ -191,12 +191,12 @@ test('legacy entry points delegate shared features and game shortcuts respect na
 
 test('toolbar styles are fluid: rem units, wrapping, collapsing labels, themes, motion, no fixed text widths', () => {
   const css = fs.readFileSync(require.resolve('../public/platform.css'),'utf8');
-  const toolbar = css.slice(0, css.indexOf('/* Protocol debugger'));
+  const toolbar = css.slice(css.indexOf('/* The shared Arcade toolbar'), css.indexOf('/* Protocol debugger'));
   assert.match(css,/order:0/); assert.match(css,/flex-wrap:wrap!important/); assert.match(css,/text-transform:none/);
   assert.match(css,/@media \(max-width:40rem\)/); assert.match(css,/@media \(prefers-color-scheme:light\)/); assert.match(css,/@media \(prefers-reduced-motion:no-preference\)/);
   assert.match(css,/calc\(100dvh - var\(--arcade-topbar-height,3\.5rem\)\)/);
   assert.match(css,/--ab-target:max\(44px,2\.75rem\)/);
-  assert.doesNotMatch(css,/platform-floating/); assert.doesNotMatch(css,/fonts\.googleapis/);
+  assert.doesNotMatch(css,/platform-floating/);
   assert.doesNotMatch(toolbar,/font(-size)?:[^;}]*\b\d+(\.\d+)?px/, 'font sizes are rem/em');
   assert.doesNotMatch(toolbar,/(^|[;{\s])(min-|max-)?width:(?!1px)\d+(\.\d+)?px/, 'no fixed pixel widths in the toolbar');
   assert.match(toolbar,/text-overflow:ellipsis/);

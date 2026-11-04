@@ -1,0 +1,7 @@
+# Route for the shared platform. Copy to sites/arcade.caddy in the infrastructure repository (not in this repository),
+# then reload the proxy: docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile
+# WebSockets pass through reverse_proxy automatically.
+arcade.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy arcade:3000
+}

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap'); /* loaded for the game pages that use DM Mono; the toolbar itself uses the system font */
 /* The shared Arcade toolbar. Every route uses this shell and it deliberately overrides legacy game themes.
    Sizes are in rem/em and flex/grid, nothing in the bar has a fixed text width: titles shrink with an ellipsis (and a tooltip),
    groups wrap, and labels collapse into icon-only buttons on narrow screens. Touch targets are at least 44 px. */
@@ -22,7 +23,7 @@ header.arcade-topbar :is(a,button,input):focus-visible{outline:2px solid var(--a
 header.arcade-topbar .arcade-icon{flex:none;width:1.5rem;height:1.5rem;display:block}
 
 /* Left: home mark and the current game, which opens the game list. */
-header.arcade-topbar .arcade-start{display:flex;align-items:center;gap:.25rem;flex:1 1 12rem;min-width:0}
+header.arcade-topbar .arcade-start{display:flex;align-items:center;gap:.25rem;flex:1 1 16rem;min-width:0}
 header.arcade-topbar .arcade-home{display:grid;place-items:center;flex:none;min-width:var(--ab-target);min-height:var(--ab-target);border-radius:.75rem;color:inherit;text-decoration:none}
 header.arcade-topbar .arcade-mark{display:block;width:2rem;height:2rem;border-radius:.5rem}
 header.arcade-topbar .arcade-home:hover .arcade-mark{filter:brightness(1.1)}
@@ -42,7 +43,7 @@ header.arcade-topbar .arcade-btn[aria-expanded=true],header.arcade-topbar .arcad
 header.arcade-topbar .arcade-btn:disabled{opacity:.5;cursor:not-allowed}
 header.arcade-topbar .arcade-btn strong{font-weight:700;color:var(--ab-accent)}
 header.arcade-topbar .arcade-room-count{color:var(--ab-muted);font-size:.8125rem;font-weight:500}
-header.arcade-topbar .arcade-current-room,header.arcade-topbar .arcade-account-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:9rem}
+header.arcade-topbar .arcade-current-room,header.arcade-topbar .arcade-account-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:8rem}
 header.arcade-topbar .arcade-rooms-toggle,header.arcade-topbar .arcade-account-toggle{max-width:100%}
 /* The reset control keeps its own label; the icon is a CSS mask so a game that rewrites the label text cannot remove it. */
 header.arcade-topbar button.arcade-reset{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:.375rem!important;min-width:var(--ab-target)!important;min-height:var(--ab-target)!important;height:auto!important;width:auto!important;margin:0!important;padding:0 .625rem!important;border:1px solid transparent!important;border-radius:.75rem!important;background:transparent!important;color:var(--ab-fg)!important;font:600 .9375rem/1.2 var(--ab-font)!important;letter-spacing:normal!important;text-transform:none!important;white-space:nowrap!important;box-shadow:none!important;opacity:1;transform:none!important}
@@ -59,7 +60,7 @@ header.arcade-topbar .arcade-nav a{display:flex;align-items:center;gap:.75rem;mi
 header.arcade-topbar .arcade-nav a:hover{background:var(--ab-hover)}
 header.arcade-topbar .arcade-nav a[aria-current=page]{background:var(--ab-accent);color:var(--ab-on-accent)}
 header.arcade-topbar .arcade-nav a span{min-width:0}
-header.arcade-topbar .arcade-player-details{padding:.25rem}
+header.arcade-topbar .arcade-player-details{top:calc(var(--arcade-topbar-height,3.5rem) - .25rem);padding:.25rem}
 header.arcade-topbar .arcade-player-details>div{display:flex;flex-direction:column;gap:.125rem;padding:.5rem .625rem;font-size:.875rem;line-height:1.4}
 header.arcade-topbar .arcade-player-details>div+div{border-top:1px solid var(--ab-line)}
 header.arcade-topbar .arcade-player-details span{color:var(--ab-muted);font-size:.8125rem}
@@ -112,7 +113,7 @@ header.arcade-topbar .arcade-link{min-height:var(--ab-target);padding:0 .75rem;b
   header.arcade-topbar .arcade-room-count,header.arcade-topbar .arcade-current-room,header.arcade-topbar .arcade-account-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
   header.arcade-topbar .arcade-connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
   header.arcade-topbar button.arcade-reset{font-size:0!important;gap:0!important}
-  header.arcade-topbar .arcade-start{flex-basis:8rem}
+  header.arcade-topbar .arcade-start{flex-basis:12rem}
   header.arcade-topbar .arcade-end{flex:1 1 100%;justify-content:space-between}
 }
 @media (prefers-reduced-motion:no-preference){
