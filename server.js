@@ -17,6 +17,7 @@ const { createAppDirectory } = require('./lib/apps');
 const { Worker } = require('node:worker_threads');
 const { Cube, faces: cubeFaces, solved: solvedCube, validate: validateCube, cleanAction: cleanCubeAction } = require('./lib/cube');
 const PORT = Number(process.env.PORT) || 3000;
+const NAME_CHANGE_INTERVAL_MS = 300;
 const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) || 10000);
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
@@ -320,11 +321,22 @@ function registerPlatformSocket(socket, request, key, room) {
     let message;
     try { message = JSON.parse(raw.toString()); } catch { return; }
     if (!message || typeof message !== 'object') return;
-    if (message.type !== 'setName' || profile.customName) return;
+    if (message.type !== 'setName' || typeof message.name !== 'string') return;
+    // The player name is display only (typed in the toolbar, or filled in from the optional shared login); it grants nothing.
+    // It can change during a session; an empty name goes back to the generated "User N". Changes are rate limited.
+    const now = Date.now();
+    if (now - (profile.nameChangedAt || 0) < NAME_CHANGE_INTERVAL_MS) return;
     const name = cleanName(message.name);
-    if (!name) return;
-    profile.name = name;
-    profile.customName = true;
+    if (!name) {
+      if (!profile.customName) return;
+      profile.name = nextAvailableUserName();
+      profile.customName = false;
+    } else {
+      if (name === profile.name) return;
+      profile.name = name;
+      profile.customName = true;
+    }
+    profile.nameChangedAt = now;
     broadcastPlatformPresence();
   });
   socket.on('close', () => {

@@ -72,5 +72,5 @@ test('every arcade app loads the shared navigation and debug platform', () => {
   assert.match(platform, /data-received-messages/);
   assert.match(platform, /data-sent-bytes/);
   assert.match(platform, /new TextEncoder\(\)/);
-  assert.match(platform, /\['\/poll','≡','Quick Poll'\]/);
+  assert.match(platform, /\['\/poll','poll','Quick Poll'\]/);
 });
