@@ -46,8 +46,9 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/platform-apps') {
     // The other apps on the shared platform for the toolbar app switcher, read live and served from this origin so browsers
     // need no CORS. An empty list (registry unconfigured or unreachable) makes the toolbar hide the switcher.
-    appDirectory.list().then(apps => {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' });
+    appDirectory.list(req.headers.cookie).then(apps => {
+      // The answer depends on who is asking (an administrator's list has an extra entry), so it must never be shared or cached.
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store', Vary: 'Cookie' });
       res.end(JSON.stringify(apps));
     }, () => {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

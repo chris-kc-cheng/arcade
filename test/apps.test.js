@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isPublicAddress, checkUrl, safeGet, parseApps, pickIcon, nameFromId, createAppDirectory, DEFAULT_APPS_URL, MAX_BYTES } = require('../lib/apps');
+const fs = require('node:fs');
+const { isPublicAddress, checkUrl, safeGet, parseApps, pickIcon, nameFromId, createAppDirectory, platformCookie, DEFAULT_APPS_URL, MAX_BYTES } = require('../lib/apps');
 
 test('only public addresses are allowed, including IPv6 and mapped forms', () => {
   for (const address of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '2606:4700:4700::1111']) assert.equal(isPublicAddress(address), true, address);
@@ -71,46 +72,90 @@ function fakeWeb(pages) {
   return { calls, fetcher };
 }
 
-test('the directory hides this app, names apps from their manifests, falls back to initials, and caches for ten minutes', async () => {
-  let clock = 0, registry = JSON.stringify([
-    { id: 'arcade', url: 'https://arcade.example/' },
-    { id: 'whack-a-math', url: 'https://math.example/app/' },
-    { id: 'plain-app', url: 'https://plain.example/' }
-  ]);
-  const pages = {
-    get 'https://list.example/app.json'() { return registry; },
-    'https://math.example/app/': '<link rel="manifest" href="site.webmanifest"><link rel="apple-touch-icon" href="/touch.png">',
-    'https://math.example/app/site.webmanifest': JSON.stringify({ short_name: 'Whack-a-Math', icons: [{ src: 'i-192.png', sizes: '192x192' }] }),
-    'https://plain.example/': '<p>no manifest</p>'
-  };
-  const web = fakeWeb(pages);
-  const directory = createAppDirectory({ appsUrl: 'https://list.example/app.json', fetcher: web.fetcher, now: () => clock });
-  assert.deepEqual(await directory.list(), [
-    { id: 'whack-a-math', name: 'Whack-a-Math', url: 'https://math.example/app/', icon: 'https://math.example/app/i-192.png' },
-    { id: 'plain-app', name: 'Plain App', url: 'https://plain.example/', icon: null }
-  ]);
-  const requests = web.calls.length;
-  clock = 9 * 60 * 1000; await directory.list();
-  assert.equal(web.calls.length, requests, 'no refetch inside the ten-minute window');
-  clock = 10 * 60 * 1000 + 1; registry = JSON.stringify([{ id: 'new-app', url: 'https://new.example/' }]);
-  assert.deepEqual((await directory.list()).map(app => app.id), ['new-app']);
+test('only the platform cookie is taken from the visitor Cookie header', () => {
+  assert.equal(platformCookie('theme=dark; sso_access=abc.DEF-1_2; other=1'), 'sso_access=abc.DEF-1_2');
+  assert.equal(platformCookie('sso_refresh=secret; session=1'), '', 'other cookies are never forwarded');
+  assert.equal(platformCookie('sso_access=bad value;'), '');
+  assert.equal(platformCookie(undefined), '');
+  assert.equal(platformCookie('sso_access=' + 'a'.repeat(9000)), '');
 });
 
-test('the last good list survives a registry outage, and with none the list is empty without hammering the registry', async () => {
-  let clock = 0, down = false;
-  const good = JSON.stringify([{ id: 'one', url: 'https://one.example/' }]);
-  const calls = [];
-  const fetcher = async url => { calls.push(url); if (url === 'https://list.example/app.json') { if (down) throw new Error('offline'); return { url, body: good }; } throw new Error('HTTP 404'); };
-  const directory = createAppDirectory({ appsUrl: 'https://list.example/app.json', fetcher, now: () => clock });
-  assert.equal((await directory.list()).length, 1);
-  down = true; clock = 11 * 60 * 1000;
-  assert.deepEqual((await directory.list()).map(app => app.id), ['one'], 'serves the last good list');
-  const before = calls.length; clock += 1000; await directory.list();
-  assert.equal(calls.length, before, 'waits before asking the registry again');
+test('a cookie sent to the registry is not sent on to another origin after a redirect', async () => {
+  const seen = [];
+  const get = async (url, lookup, headers) => {
+    seen.push([url, headers.cookie]);
+    return url === 'https://apps.example/app.json' ? { redirect: 'https://other.example/app.json' } : { body: Buffer.from('[]') };
+  };
+  await safeGet('https://apps.example/app.json', { get, headers: { cookie: 'sso_access=t' } });
+  assert.deepEqual(seen, [['https://apps.example/app.json', 'sso_access=t'], ['https://other.example/app.json', undefined]]);
+});
 
-  const never = createAppDirectory({ appsUrl: 'https://list.example/app.json', fetcher: async () => { throw new Error('offline'); }, now: () => 0 });
-  assert.deepEqual(await never.list(), []);
+function platform({ admin = true } = {}) {
+  const calls = [];
+  const state = { down: false, clock: 0 };
+  const pages = {
+    'https://math.example/': '<link rel="manifest" href="m.webmanifest">',
+    'https://math.example/m.webmanifest': JSON.stringify({ short_name: 'Math', icons: [{ src: 'i.png', sizes: '192x192' }] }),
+    'https://admin.example/': null, // the admin page itself refuses the scraper
+    'https://admin.example/manifest.webmanifest': JSON.stringify({ short_name: 'Admin', icons: [{ src: 'a.png', sizes: '192x192' }] })
+  };
+  const fetcher = async (url, options = {}) => {
+    calls.push({ url, cookie: options.headers?.cookie, timeoutMs: options.timeoutMs });
+    if (url === 'https://apps.example/app.json') {
+      if (state.down) throw new Error('offline');
+      const list = [{ id: 'arcade', url: 'https://arcade.example/' }, { id: 'math', url: 'https://math.example/' }];
+      if (admin && options.headers?.cookie) list.push({ id: 'admin', url: 'https://admin.example/' });
+      return { url, body: JSON.stringify(list) };
+    }
+    if (pages[url] === undefined || pages[url] === null) throw new Error('HTTP 403');
+    return { url, body: pages[url] };
+  };
+  return { calls, state, fetcher, directory: () => createAppDirectory({ appsUrl: 'https://apps.example/app.json', fetcher, now: () => state.clock }) };
+}
+
+test('an administrator cookie gets the admin entry, anonymous visitors never do, and the list is never shared between visitors', async () => {
+  const web = platform(); const directory = web.directory();
+  const anonymous = await directory.list();
+  assert.deepEqual(anonymous.map(app => app.id), ['math'], 'this app is hidden and there is no admin entry');
+  const asAdmin = await directory.list('theme=dark; sso_access=admintoken; sso_refresh=nope');
+  assert.deepEqual(asAdmin.map(app => app.id), ['math', 'admin']);
+  assert.deepEqual(asAdmin.find(app => app.id === 'admin'), { id: 'admin', url: 'https://admin.example/', name: 'Admin', icon: 'https://admin.example/a.png' }, 'name and icon come from the public manifest');
+  assert.deepEqual((await directory.list()).map(app => app.id), ['math'], 'an anonymous visitor after an administrator still gets the public list');
+  assert.deepEqual((await directory.list('sso_access=othertoken')).map(app => app.id), ['math', 'admin']);
+  const registryCalls = web.calls.filter(call => call.url === 'https://apps.example/app.json');
+  assert.equal(registryCalls.length, 4, 'the registry is read on every request');
+  assert.deepEqual(registryCalls.map(call => call.cookie), [undefined, 'sso_access=admintoken', undefined, 'sso_access=othertoken'], 'only the platform cookie is forwarded, never the rest of the header');
+  assert.ok(registryCalls.every(call => call.timeoutMs === 2000), 'a 2 second limit');
+  assert.ok(web.calls.filter(call => call.url !== 'https://apps.example/app.json').every(call => call.cookie === undefined), 'app pages and manifests never get the cookie');
+});
+
+test('descriptions are cached per app URL for ten minutes, not per list', async () => {
+  const web = platform(); const directory = web.directory();
+  await directory.list(); await directory.list('sso_access=t'); await directory.list();
+  const manifest = () => web.calls.filter(call => call.url === 'https://math.example/m.webmanifest').length;
+  assert.equal(manifest(), 1, 'one manifest read for three requests');
+  web.state.clock = 10 * 60 * 1000 + 1; await directory.list();
+  assert.equal(manifest(), 2);
+});
+
+test('when the registry fails the last public list is served, never an admin entry', async () => {
+  const web = platform(); const directory = web.directory();
+  await directory.list(); await directory.list('sso_access=admintoken');
+  web.state.down = true;
+  assert.deepEqual((await directory.list('sso_access=admintoken')).map(app => app.id), ['math'], 'an outage hides the admin entry');
+  assert.deepEqual((await directory.list()).map(app => app.id), ['math']);
+  const fresh = platform(); fresh.state.down = true;
+  assert.deepEqual(await fresh.directory().list(), [], 'nothing was ever read: empty, so the toolbar hides the switcher');
   const unconfigured = createAppDirectory({ appsUrl: '', fetcher: async () => { throw new Error('must not be called'); } });
-  assert.equal(unconfigured.enabled, false); assert.deepEqual(await unconfigured.list(), []);
+  assert.equal(unconfigured.enabled, false); assert.deepEqual(await unconfigured.list('sso_access=t'), []);
   assert.equal(DEFAULT_APPS_URL, 'https://apps.hedgies.cloud/app.json');
+});
+
+test('an app that is down is still listed by id, and the server answers per visitor without shared caching', async () => {
+  const fetcher = async url => { if (url === 'https://apps.example/app.json') return { url, body: JSON.stringify([{ id: 'plain-app', url: 'https://plain.example/' }]) }; throw new Error('HTTP 500'); };
+  const apps = await createAppDirectory({ appsUrl: 'https://apps.example/app.json', fetcher }).list();
+  assert.deepEqual(apps, [{ id: 'plain-app', url: 'https://plain.example/', name: 'Plain App', icon: null }]);
+  const server = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+  assert.match(server, /appDirectory\.list\(req\.headers\.cookie\)/);
+  assert.match(server, /'Cache-Control': 'private, no-store', Vary: 'Cookie'/);
 });
