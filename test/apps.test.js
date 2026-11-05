@@ -100,7 +100,7 @@ function platform({ admin = true } = {}) {
     'https://admin.example/manifest.webmanifest': JSON.stringify({ short_name: 'Admin', icons: [{ src: 'a.png', sizes: '192x192' }] })
   };
   const fetcher = async (url, options = {}) => {
-    calls.push({ url, cookie: options.headers?.cookie, timeoutMs: options.timeoutMs });
+    calls.push({ url, cookie: options.headers?.cookie, headers: options.headers, timeoutMs: options.timeoutMs });
     if (url === 'https://apps.example/app.json') {
       if (state.down) throw new Error('offline');
       const list = [{ id: 'arcade', url: 'https://arcade.example/' }, { id: 'math', url: 'https://math.example/' }];
@@ -126,6 +126,7 @@ test('an administrator cookie gets the admin entry, anonymous visitors never do,
   assert.equal(registryCalls.length, 4, 'the registry is read on every request');
   assert.deepEqual(registryCalls.map(call => call.cookie), [undefined, 'sso_access=admintoken', undefined, 'sso_access=othertoken'], 'only the platform cookie is forwarded, never the rest of the header');
   assert.ok(registryCalls.every(call => call.timeoutMs === 2000), 'a 2 second limit');
+  assert.deepEqual(registryCalls.map(call => call.headers), [{}, { cookie: 'sso_access=admintoken' }, {}, { cookie: 'sso_access=othertoken' }], 'exactly Cookie: sso_access=<value>, no other header, and no Cookie header at all when the cookie is absent');
   assert.ok(web.calls.filter(call => call.url !== 'https://apps.example/app.json').every(call => call.cookie === undefined), 'app pages and manifests never get the cookie');
 });
 
