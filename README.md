@@ -27,8 +27,13 @@
 | <img src="public/screenshots/twinspot.png" alt="Twin Spot two-card emoji matching game screenshot" width="320" height="180"> |
 | A Spot-It style race: find the one emoji (or its word, on hard) that appears on both round cards, with a live ranking. [Play Twin Spot](/twinspot). |
 
+| Flight Sim |
+| --- |
+| <img src="public/screenshots/flight.png" alt="Flight simulator: a small plane on final approach to Billy Bishop airport over 3D Toronto" width="320" height="180"> |
+| Land a small plane at Billy Bishop airport from the west, over a 3D Toronto built from live OpenStreetMap data. [Fly it](/flight). |
+
 <!-- screenshot-status:start -->
-All thirteen previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
+All fourteen previews are actual local app captures at 1920×1080, using synthetic test players. Every thumbnail is displayed at 320×180.
 <!-- screenshot-status:end -->
 
 A small real-time browser arcade with a collaborative drawing board, multiplayer tank arena, two-player penalty shootout, Line Fighter, Snake, Big-D, a typing challenge with solo and head-to-head modes, the solo variable-length Many Words game, live shareable Quick Polls, Cube Lab, the solo Slush Rush dispenser, the shared Typo Hunt proofreading game, the Twin Spot card-matching race, with an app switcher to the other Hedgies apps. Game state and presence live only in the Node.js process and reset whenever it restarts.
@@ -46,7 +51,7 @@ Open <http://localhost:3000> in multiple browser windows to try the real-time mo
 
 ### Visual assets
 
-Run `npm run screenshots:check` to verify all thirteen showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to thirteen PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
+Run `npm run screenshots:check` to verify all fourteen showcase assets and their uniform dimensions. On a machine that permits a local Chrome/Chromium browser, `npm run screenshots` captures the actual app with synthetic test players and updates the showcase to fourteen PNGs. See [capture requirements and scene details](docs/screenshot-capture.md).
 
 A cute lime-green gecko unifies the toolbar logo, browser favicon and installed app icons. The original artwork is `public/icons/gecko-source.png`; `public/icons/arcade.svg` defines its evergreen icon background. Run `python3 scripts/generate-icons.py` (needs Inkscape) to regenerate them; see [icon source and output details](public/icons/README.md).
 
@@ -143,6 +148,19 @@ Open `/cube`. Click the six face grids to cycle white, red, green, yellow, orang
 ## Slush Rush
 
 Open `/slushy` for a private 60-second slushy shift. Hold keys **1–4** or the matching dispenser levers with mouse/touch; release at the rim to serve automatically. S, M, L and XL cups have different fill times and point values. Clear domed lids hold another 24%: extra slush earns bonus points, but exceeding the dome spills the cup and triggers a cloth cleanup. The clock pauses during cleaning. Serve 3, 7 and 12 cups to unlock two, three and four simultaneous cups. Reset starts only your shift. Only the best score is shared, calculated by the server, and retained until the Node process restarts. Disconnected shifts pause and can reconnect within the normal 10-second grace period.
+
+## Flight simulator
+
+Open `/flight`. The simulator fills the window below the top bar. You start in a small plane on a 3 degree final approach and try to land it. Pick the airport in the toolbar: **Toronto Billy Bishop** (default, from the west over Lake Ontario), **Hong Kong International** (from the west over the sea) or **Tokyo Haneda** (from the south over Tokyo Bay). The map is read from **OpenStreetMap**, and everything is drawn in 3D in your browser with plain WebGL (no libraries).
+
+- **OpenStreetMap data.** The page asks the Overpass API for the airport (ICAO CYTZ, VHHH or RJTT: its name, elevation, runways, taxiways and aprons), roughly 17,000 buildings between the western approach and downtown, the lake or sea shore and islands, and open water (lakes, harbours, lagoons, rivers, reservoirs: anything OpenStreetMap marks as water is drawn blue) (Haneda's dense city is thinned to the 30,000 buildings nearest the airport). The airport position, the runway line and the landing direction all come from that data: the runway is OpenStreetMap way 5687568, whose true heading (about 071°) is runway 08 from the west. Buildings are extruded from their footprints using the `height` tag, else `building:levels` times 3.2 m, else a stable guess. Answers are cached in the browser (IndexedDB) for a week. If every Overpass server is unreachable, the page says so and falls back to a small bundled snapshot of the airport's runways with generated buildings; the repository screenshot is taken this way. Only a small © OpenStreetMap credit link stays on screen. Map data © OpenStreetMap contributors (ODbL).
+- **More map as you fly.** The first region is read when you pick an airport. When you fly towards or past its edge, the next 3 km cells of OpenStreetMap (buildings, shore and water) are read automatically a couple at a time, ahead of the plane, and cells far behind are dropped again; the map in the corner says "Loading map…" while it works.
+- **Map.** A 2D map in the top right corner (north up, zoom + / −) shows the land, water, runways, buildings, your plane as a yellow arrow and every other pilot's plane as a coloured arrow with their name (on the map's rim when off it).
+- **Controls.** Like a real stick: **W / ↑ pushes forward and points the nose down; S / ↓ pulls back and points the nose up** (pull too far and the wing stalls). **A / ←** and **D / →** bank, **Q / E** rudder, **Shift / PgUp** and **Z / PgDn** (or the slider) set the throttle, **Space / B** brakes on the ground, **C** switches between chase and cockpit views, **R** respawns on final approach, **H** lists the keys. **F / V** lower and raise the flaps (0°, 10°, 20°, 30°). The plane is a Cessna 172: high wing with struts, fixed tricycle gear, 11 m span, and Cessna 172 numbers for the flight model (point mass); the stick sets the angle of attack and the plane can take off, fly and land.
+- **Units.** Speed, altitude, climb rate and the distance to the runway are shown in aviation units and in metric (kt and km/h, ft and m, fpm and m/s, nm and km). The numbers update four times a second so they stay readable.
+- **Simulation speed.** Buttons or keys **1–6** run the simulation at **1×, 2×, 5×, 10×, 50× or 100×**, in small time steps so the flight stays accurate; at high speeds the controls are softened so the plane stays flyable.
+- **Crashes.** A hard or nose-first landing, a wing low, the lake, and any building are crashes, and you can try again at once.
+- **Sharing.** Each pilot flies their own plane in the browser; **only the plane's position and attitude is sent to the server** (latitude, longitude, altitude, heading, pitch, roll and throttle, ten times a second). The server checks the numbers are valid, rate limits them and rejects impossible jumps (it allows the speed of a plane at 100×), then relays everyone's position, so pilots see each other's planes with name tags. Respawning removes your plane from others' view until it reports again, and a pilot who disconnects disappears at once. The top bar shows the number of pilots as for every game, and RESPAWN is the reset control.
 
 ## Penalty shootout
 

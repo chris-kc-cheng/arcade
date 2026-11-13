@@ -1,8 +1,8 @@
 (() => {
   // One shared shell for the React entry points and the dependency-free game clients: the toolbar, the room picker,
   // presence, the optional shared login, the app switcher and the protocol debugger.
-  const games = [['/','board','Drawing board'],['/tank','tank','Tank'],['/penalty','ball','Penalty shootout'],['/fighter','bolt','Line Fighter'],['/snake','snake','Snake'],['/bigtwo','cards','Big-D'],['/typing','keyboard','Type/Off'],['/wordle','letter','Many Words'],['/poll','poll','Quick Poll'],['/cube','cube','Cube Lab'],['/slushy','cup','Slush Rush'],['/typohunt','search','Typo Hunt'],['/twinspot','twin','Twin Spot']];
-  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy',typohunt:'typohunt',twinspot:'twinspot'};
+  const games = [['/','board','Drawing board'],['/tank','tank','Tank'],['/penalty','ball','Penalty shootout'],['/fighter','bolt','Line Fighter'],['/snake','snake','Snake'],['/bigtwo','cards','Big-D'],['/typing','keyboard','Type/Off'],['/wordle','letter','Many Words'],['/poll','poll','Quick Poll'],['/cube','cube','Cube Lab'],['/slushy','cup','Slush Rush'],['/typohunt','search','Typo Hunt'],['/twinspot','twin','Twin Spot'],['/flight','plane','Flight Sim']];
+  const rooms = {board:'doodle',tank:'tanks',penalty:'penalty',fighter:'fighter',snake:'snake',bigtwo:'bigtwo',typing:'typing',wordle:'wordle',poll:'poll',cube:'cube',slushy:'slushy',typohunt:'typohunt',twinspot:'twinspot',flight:'flight'};
   // Line icons on a 24 px grid: 2 px stroke, round caps and joins, drawn in currentColor. Decorative: every button has its own label.
   const ICON_PATHS = {
     board:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
@@ -17,6 +17,7 @@
     cube:'M12 2 3 7v10l9 5 9-5V7ZM3 7l9 5 9-5M12 12v10',
     cup:'M6 7h12l-1.5 13a1 1 0 0 1-1 .9h-7a1 1 0 0 1-1-.9ZM5 7h14M13 7l2-4h3',
     search:'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.35-4.35',
+    plane:'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.2.2c-.3.4-.2.9.2 1.2L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.2.2l.2-.1c.3-.3.5-.7.4-1.2Z',
     twin:'M9 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z',
     users:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
     door:'M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M3 21h18M14 12h.01',
