@@ -16,17 +16,55 @@
     VHHH: { icao: 'VHHH', label: 'Hong Kong International', runways: ['07R/25L', '07L/25R', '07C/25C'], from: 'west', distance: 6500, around: 7500, water: 'coastline', maxBuildings: 20000, region: { south: -0.045, north: 0.05, west: -0.075, east: 0.06 } },
     RJTT: { icao: 'RJTT', label: 'Tokyo Haneda', runways: ['16L/34R', '16R/34L', '05/23', '04/22'], from: 'south', distance: 6500, around: 6500, water: 'coastline', maxBuildings: 30000, region: { south: -0.075, north: 0.02, west: -0.045, east: 0.045 } }
   };
+  // London City: a steep 5.5 degree approach from the east along the Thames and the docks (no coastline, so no sea; the water is
+  // read as open water). Victoria Harbour is a place to look around, not an airport: the flight starts over the sea west of Hong Kong
+  // Island, heading east into the harbour, so it has no runway (just a placeholder at its centre).
+  AIRPORTS.EGLC = { icao: 'EGLC', label: 'London City', runways: ['09/27'], from: 'east', distance: 4600, glide: 5.5, around: 1800, water: 'none', maxBuildings: 30000, region: { south: -0.03, north: 0.03, west: -0.06, east: 0.09 } };
+  AIRPORTS.VHHV = { icao: 'VHHV', label: 'Hong Kong Victoria Harbour', place: { lat: 22.2925, lon: 114.168 }, start: { lat: 22.2862, lon: 114.092, heading: 78, alt: 420 }, runways: [], from: 'west', distance: 0, around: 0, water: 'coastline', maxBuildings: 30000, region: { south: -0.045, north: 0.05, west: -0.1, east: 0.06 } };
   const DEFAULT_AIRPORT = 'CYTZ';
+  // Any airport can be flown into by typing its ICAO (4 character) or IATA (3 character) code: OpenStreetMap is asked for the aerodrome
+  // with that tag, the longest runway is used, and it is approached from the end that points into the usual wind (westerlies outside the
+  // tropics, so landing towards the west; easterly trade winds within 30 degrees of the equator, so landing towards the east).
+  const ALIASES = { YTZ: 'CYTZ', HKG: 'VHHH', HND: 'RJTT', LCY: 'EGLC' };
+  const SUGGESTIONS = [['KJFK', 'New York John F. Kennedy'], ['KLAX', 'Los Angeles'], ['KSFO', 'San Francisco'], ['EGLL', 'London Heathrow'], ['LFPG', 'Paris Charles de Gaulle'], ['EDDF', 'Frankfurt'], ['OMDB', 'Dubai'], ['WSSS', 'Singapore Changi'], ['YSSY', 'Sydney'], ['RKSI', 'Seoul Incheon'], ['ZBAA', 'Beijing Capital'], ['LSZH', 'Zurich']];
+  const resolveCode = input => { const code = String(input || '').trim().toUpperCase(); return /^[A-Z0-9]{3,4}$/.test(code) ? (ALIASES[code] || code) : ''; };
+  // Searching by name uses Nominatim, OpenStreetMap's own search service, which returns aerodromes with their ICAO / IATA tags
+  // (`extratags`). Only aerodromes that have a code are offered, because the airport is then opened through the same code lookup.
+  const searchUrl = text => { const q = /airport|aerodrome|airfield|airstrip/i.test(text) ? text : `${text} airport`; return `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q, format: 'jsonv2', limit: '20', extratags: '1', addressdetails: '1', 'accept-language': 'en' })}`; };
+  // Nominatim often leaves the codes out of `extratags`, so the candidates (aerodromes) are kept with their OpenStreetMap ids and the
+  // missing codes are read from the elements themselves with one Overpass request (enrichQuery / applyTags).
+  const OVERPASS_TYPE = { node: 'node', way: 'way', relation: 'rel' };
+  function parseSearch(results) {
+    const seen = new Set(), found = [];
+    for (const r of Array.isArray(results) ? results : []) {
+      if (!(r.category === 'aeroway' || r.class === 'aeroway') || r.type !== 'aerodrome' || !OVERPASS_TYPE[r.osm_type]) continue;
+      const key = `${r.osm_type}/${r.osm_id}`; if (seen.has(key)) continue; seen.add(key);
+      const tags = r.extratags || {}, a = r.address || {}, where = [a.city || a.town || a.village || a.municipality || a.county || a.state, a.country].filter(Boolean).join(', ');
+      found.push({ osmType: r.osm_type, osmId: r.osm_id, name: tags['name:en'] || r.name || (r.display_name || '').split(',')[0] || '', where, ...codesOf(tags) });
+    }
+    return found.slice(0, 12);
+  }
+  function codesOf(tags) {
+    const icao = String(tags.icao || '').toUpperCase(), iata = String(tags.iata || '').toUpperCase(), okIcao = /^[A-Z0-9]{4}$/.test(icao) ? icao : '', okIata = /^[A-Z0-9]{3}$/.test(iata) ? iata : '';
+    return { icao: okIcao, iata: okIata, code: okIcao || okIata };
+  }
+  const enrichQuery = list => { const parts = list.filter(r => !r.code).map(r => `${OVERPASS_TYPE[r.osmType]}(${r.osmId});`); return parts.length ? `[out:json][timeout:25];(${parts.join('')});out tags;` : ''; };
+  // Fill in the missing codes from the Overpass answer and keep only the airports that have one.
+  function applyTags(list, json) {
+    const byId = new Map(((json && json.elements) || []).map(e => [`${e.type}/${e.id}`, e.tags || {}]));
+    return list.map(r => { if (r.code) return r; const tags = byId.get(`${r.osmType}/${r.osmId}`) || {}; return { ...r, ...codesOf(tags), name: tags['name:en'] || tags.name || r.name }; }).filter(r => r.code);
+  }
+  const dynamicConfig = code => ({ icao: code, label: code, runways: [], from: 'heading', landHeading: 270, distance: 5200, glide: 3, around: 3500, water: 'coastline', maxBuildings: 30000, dynamic: true, region: { south: -0.035, north: 0.035, west: -0.06, east: 0.06 } });
   const config = code => AIRPORTS[code] || AIRPORTS[DEFAULT_AIRPORT];
 
   // ---- queries ------------------------------------------------------------------------------------------------------------
-  const airportQuery = code => `[out:json][timeout:60];nwr["icao"="${config(code).icao}"]->.airport;(.airport;way["aeroway"~"^(runway|taxiway|apron)$"](around.airport:${config(code).around}););out tags geom;`;
+  const airportQuery = (code = DEFAULT_AIRPORT) => { const known = AIRPORTS[code], id = known ? known.icao : code, key = id.length === 3 ? 'iata' : 'icao', around = known ? known.around : 3500; return `[out:json][timeout:60];nwr["${key}"="${id}"]->.airport;(.airport;way["aeroway"~"^(runway|taxiway|apron)$"](around.airport:${around}););out tags geom;`; };
   const bounds = (origin, region) => ({ south: origin.lat + region.south, west: origin.lon + region.west, north: origin.lat + region.north, east: origin.lon + region.east });
   const box = (origin, region) => { const b = bounds(origin, region); return `${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}`; };
   const buildingsQuery = (origin, region) => `[out:json][timeout:120];way["building"](${box(origin, region)});out tags geom;`;
   // The shore as complete ways. For Lake Ontario that is the outer ways (the mainland shore) and the inner ways (the islands) of
   // the lake relation that cross the box; elsewhere it is OpenStreetMap's coastline.
-  const waterQueries = (origin, region, code) => config(code).water === 'lake'
+  const waterQueries = (origin, region, code) => config(code).water === 'none' ? [] : config(code).water === 'lake'
     ? ['outer', 'inner'].map(role => `[out:json][timeout:60];rel["natural"="water"]["name"="Lake Ontario"](${box(origin, region)})->.lake;way(r.lake:"${role}")(${box(origin, region)});out geom;`)
     : [`[out:json][timeout:60];way["natural"="coastline"](${box(origin, region)});out geom;`];
 
@@ -61,15 +99,20 @@
     }
     return list;
   }
+  // A place has no runway: a zero-width placeholder at its centre keeps the rest of the code (origin, projection) working.
+  function placeAirport(code) {
+    const o = config(code);
+    return { icao: o.icao, name: o.label, elevation: 0, osmId: 'place', runways: [{ ref: '-', width: 0, nodes: [[o.place.lat, o.place.lon], [o.place.lat, o.place.lon + 0.00001]] }], taxiways: [], aprons: [] };
+  }
   function parseAirport(json, code = DEFAULT_AIRPORT) {
-    const elements = json.elements || [], icao = config(code).icao, aerodrome = elements.find(e => e.tags && e.tags.icao === icao);
+    const elements = json.elements || [], icao = config(code).icao, aerodrome = elements.find(e => e.tags && (e.tags.icao === icao || e.tags.iata === icao) && (e.tags.aeroway === 'aerodrome' || e.tags.name || e.tags.icao || e.tags.iata));
     const ways = kind => elements.filter(e => e.type === 'way' && e.tags && e.tags.aeroway === kind && e.geometry);
     const byRef = new Map();
     for (const e of ways('runway')) { const ref = e.tags.ref || `way${e.id}`; if (!byRef.has(ref)) byRef.set(ref, { ref, width: Number(e.tags.width) || 0, chains: [] }); const entry = byRef.get(ref); entry.width = entry.width || Number(e.tags.width) || 0; entry.chains.push(points(e.geometry)); }
     const runways = [...byRef.values()].map(r => ({ ref: r.ref, width: r.width || 45, nodes: joinChains(r.chains.filter(c => c.length >= 2)).sort((a, b) => b.length - a.length)[0] })).filter(r => r.nodes && r.nodes.length >= 2);
-    if (!aerodrome || !runways.length) throw new Error(`No runway for ${icao} in the OpenStreetMap answer`);
+    if (!aerodrome || !runways.length) { const error = new Error(`No runway for ${icao} in the OpenStreetMap answer`); error.code = 'not-found'; throw error; }
     return {
-      icao, name: aerodrome.tags.name || icao, elevation: Number(aerodrome.tags.ele) || 0, osmId: `${aerodrome.type}/${aerodrome.id}`, runways,
+      icao: aerodrome.tags.icao || icao, iata: aerodrome.tags.iata || '', name: aerodrome.tags['name:en'] || aerodrome.tags.name || icao, elevation: parseFloat(aerodrome.tags.ele) || 0, osmId: `${aerodrome.type}/${aerodrome.id}`, runways,
       taxiways: ways('taxiway').map(e => ({ id: e.id, nodes: points(e.geometry) })).filter(t => t.nodes.length >= 2),
       aprons: ways('apron').map(e => ({ id: e.id, nodes: points(e.geometry) })).filter(a => a.nodes.length >= 4)
     };
@@ -195,7 +238,7 @@
     return { polygon: rectangle(rect), islands: rings };
   }
   // `results` holds the Overpass answers to waterQueries, in order.
-  const parseWater = (results, toLocal, origin, region, code) => config(code).water === 'lake' ? parseLake(results, toLocal, origin, region) : parseCoast(results[0], toLocal, origin, region);
+  const parseWater = (results, toLocal, origin, region, code) => config(code).water === 'none' ? null : config(code).water === 'lake' ? parseLake(results, toLocal, origin, region) : parseCoast(results[0], toLocal, origin, region);
 
   // Rings of open water from the pondsQuery answer: [{ ring: [[x, z], ...], holes: [ring, ...], box: [x0, z0, x1, z1] }].
   function parsePonds(json, toLocal) {
@@ -206,9 +249,13 @@
     for (const e of (json && json.elements) || []) {
       if (e.type === 'way') { if (!e.geometry || !e.geometry.every(Boolean)) continue; const chain = points(e.geometry), r = closed(chain) ? ring(chain) : null; if (r) add(r, []); continue; }
       if (e.type !== 'relation' || !e.members) continue;
-      const chains = role => joinChains(e.members.filter(m => m.type === 'way' && m.role === role && m.geometry && m.geometry.length > 1 && m.geometry.every(Boolean)).map(m => points(m.geometry))).filter(closed);
-      const holes = chains('inner').map(ring).filter(Boolean);
-      for (const outer of chains('outer')) { const r = ring(outer); if (r) add(r, holes.filter(h => inside(r, h[0][0], h[0][1]))); }
+      // Members partly outside the box arrive with null nodes: keep the runs inside it, join them end to end, and keep the closed rings.
+      // A river that crosses the whole box leaves two open banks: they are closed into one ring across the box (nearest ends together).
+      const joined = role => joinChains(e.members.filter(m => m.type === 'way' && m.role === role && m.geometry).flatMap(m => runsOf(m.geometry).map(points)));
+      const holes = joined('inner').filter(closed).map(ring).filter(Boolean), outers = joined('outer'), rings = outers.filter(closed);
+      const open = outers.filter(c => !closed(c));
+      if (open.length === 2) { const [a, b] = open, gap = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]); rings.push(gap(a.at(-1), b[0]) <= gap(a.at(-1), b.at(-1)) ? [...a, ...b] : [...a, ...[...b].reverse()]); }
+      for (const outer of rings) { const r = ring(outer); if (r) add(r, holes.filter(h => inside(r, h[0][0], h[0][1]))); }
     }
     return out;
   }
@@ -217,6 +264,10 @@
   // The two ends of a runway in local metres, ordered threshold first: the landing end is on the side the approach comes from.
   function landingEnds(runway, code, toLocal) {
     let pts = runway.nodes.map(([lat, lon]) => toLocal(lat, lon));
+    if (config(code).landHeading != null) {   // land towards the wanted heading (into the usual wind)
+      const diff = Math.abs((((bearing(pts[0], pts.at(-1)) * 180 / Math.PI - config(code).landHeading) % 360) + 540) % 360 - 180);
+      return diff > 90 ? [...pts].reverse() : pts;
+    }
     const key = { west: p => p[0], east: p => -p[0], south: p => p[1], north: p => -p[1] }[config(code).from];
     if (key(pts[0]) > key(pts.at(-1))) pts = [...pts].reverse();
     return pts;
@@ -224,6 +275,7 @@
   // The area to read: the airport's usual region, grown to hold the whole approach path (a runway at 071 degrees puts the start of
   // a 5 km final nearly 2 km off to the side of the runway's middle).
   function regionFor(airport, code) {
+    if (config(code).place) return { ...config(code).region };
     const options = config(code), runway = mainRunway(airport, code), origin = centroid(runway.nodes), { toLocal, toGeo } = projector(origin);
     const pts = landingEnds(runway, code, toLocal), heading = bearing(pts[0], pts.at(-1));
     const start = toGeo(pts[0][0] - Math.sin(heading) * options.distance, pts[0][1] - Math.cos(heading) * options.distance), margin = 0.012, region = { ...options.region };
@@ -240,8 +292,10 @@
     const runwayPoints = landingEnds(runway, code, toLocal);
     const bb = bounds(origin, scene_region), sw = toLocal(bb.south, bb.west), ne = toLocal(bb.north, bb.east);
     const threshold = runwayPoints[0], far = runwayPoints.at(-1);
+    const place = Boolean(options.place), at = place ? toLocal(options.start.lat, options.start.lon) : null;
     return {
-      source, region: scene_region, code: options.icao, label: options.label, distance: options.distance, origin, toLocal, toGeo, airport: { icao: airport.icao, name: airport.name, elevation: airport.elevation, osmId: airport.osmId },
+      place, glide: options.glide || 3, start: place ? { x: at[0], z: at[1], heading: options.start.heading * Math.PI / 180, alt: options.start.alt } : null,
+      source, region: scene_region, code: options.icao, label: options.label, distance: options.distance, origin, toLocal, toGeo, airport: { icao: airport.icao, iata: airport.iata || '', name: airport.name, elevation: airport.elevation, osmId: airport.osmId },
       runway: { ref: runway.ref, width: runway.width, points: runwayPoints, threshold, far, heading: bearing(threshold, far), length: Math.hypot(far[0] - threshold[0], far[1] - threshold[1]) },
       otherRunways: airport.runways.filter(r => r !== runway).map(r => ({ ref: r.ref, width: r.width, points: line(r.nodes) })),
       taxiways: airport.taxiways.map(t => line(t.nodes)), aprons: airport.aprons.map(a => line(a.nodes)),
@@ -250,7 +304,9 @@
   }
   // Everything is read from OpenStreetMap: the airport first (it fixes the origin), then buildings and water around it.
   async function load(fetchJson, code = DEFAULT_AIRPORT) {
-    const airport = parseAirport(await fetchJson(airportQuery(code)), code);
+    const dynamic = !AIRPORTS[code]; if (dynamic) AIRPORTS[code] = dynamicConfig(code);
+    let airport; try { airport = config(code).place ? placeAirport(code) : parseAirport(await fetchJson(airportQuery(code)), code); } catch (error) { if (dynamic) delete AIRPORTS[code]; throw error; }
+    if (dynamic) { const o = AIRPORTS[code], middle = centroid(mainRunway(airport, code).nodes); o.label = airport.name; o.landHeading = Math.abs(middle.lat) < 30 ? 90 : 270; }
     const origin = centroid(mainRunway(airport, code).nodes), { toLocal } = projector(origin), region = regionFor(airport, code);
     const [buildingJson, pondJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
     let water = null; try { water = waterJson.some(Boolean) ? parseWater(waterJson, toLocal, origin, region, code) : null; } catch (error) { water = null; }
@@ -375,7 +431,7 @@
   }
 
   // The plane on final approach for the runway: before the threshold, lined up with the centre line.
-  const finalApproach = scene => ({ x: scene.runway.threshold[0], z: scene.runway.threshold[1], heading: scene.runway.heading });
+  const finalApproach = scene => scene.place ? { x: scene.start.x, z: scene.start.z, heading: scene.start.heading } : ({ x: scene.runway.threshold[0], z: scene.runway.threshold[1], heading: scene.runway.heading });
 
   // ---- snapshots used when OpenStreetMap cannot be reached ------------------------------------------------------------------
   // Runway nodes copied from OpenStreetMap (CYTZ ways 5687568 and 7769081; VHHH ways 510284409 and 4956469; RJTT ways 865448352,
@@ -386,6 +442,8 @@
       ['06/24', 30, [[[43.6301953, -79.390473], [43.6298394, -79.3910411], [43.6297104, -79.3912469], [43.6294148, -79.3917333], [43.6294028, -79.391753], [43.6268769, -79.3959096], [43.626341, -79.3967757], [43.6261718, -79.3970491], [43.6258795, -79.3975586]]]]] },
     VHHH: { name: 'Hong Kong International Airport', ele: 9, osm: 'relation/16105017', runways: [
       ['07R/25L', 60, [[[22.296234, 113.897974], [22.296273, 113.898094], [22.296558, 113.899015], [22.296702, 113.899423]], [[22.296702, 113.899423], [22.296755, 113.899588], [22.29766, 113.902396], [22.299294, 113.907462], [22.301239, 113.913495], [22.302845, 113.918475], [22.304866, 113.924742], [22.306556, 113.929986], [22.307469, 113.932816]]]]] },
+    EGLC: { name: 'London City Airport', ele: 6, osm: 'way/121158889', runways: [['09/27', 30, [[[51.505524, 0.045733], [51.504921, 0.064982]]]]] },
+    VHHV: { name: 'Hong Kong Victoria Harbour', ele: 0, osm: 'place', runways: [['-', 0, [[[22.2925, 114.168], [22.2925, 114.16801]]]]] },
     RJTT: { name: 'Tokyo International Airport (Haneda)', ele: 6, osm: 'relation/17864987', runways: [
       ['16L/34R', 60, [[[35.565866, 139.786559], [35.563502, 139.788242], [35.562858, 139.7887]], [[35.562858, 139.7887], [35.560267, 139.790539], [35.555161, 139.794165], [35.548785, 139.798681], [35.544953, 139.8014], [35.542511, 139.803143]], [[35.539712, 139.805119], [35.540219, 139.804759], [35.542511, 139.803143]]]]] }
   };
@@ -407,7 +465,8 @@
     const shore = options.icao === 'CYTZ' ? [[43.6363, -79.4702], [43.6363, -79.4615], [43.629, -79.4226], [43.6311, -79.41], [43.6418, -79.3745]].map(([lat, lon]) => toLocal(lat, lon)) : null;
     // Sea everywhere; the land is the mainland north of the shore plus the island (or a rough block of land around the runway).
     const mainland = shore ? [[minX, shore[0][1]], ...shore, [maxX, shore.at(-1)[1]], [maxX, maxZ], [minX, maxZ]] : null;
-    const water = { polygon: rectangle(rect), islands: mainland ? [mainland, land] : [land] };
+    // A place is all sea in the sketch; London City has no sea.
+    const water = options.water === 'none' ? null : options.place ? { polygon: rectangle(rect), islands: [] } : { polygon: rectangle(rect), islands: mainland ? [mainland, land] : [land] };
     return buildScene({ airport, buildings, water, region }, 'snapshot', options.icao);
   }
 
@@ -453,5 +512,5 @@
   // Everything in one array (ground first), for tests and simple uses.
   function buildMesh(scene) { const { base, ground, solid } = meshParts(scene), all = new Float32Array(base.length + ground.length + solid.length); all.set(base); all.set(ground, base.length); all.set(solid, base.length + ground.length); return all; }
 
-  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
+  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
 });

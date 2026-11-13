@@ -42,36 +42,6 @@
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 
-  // A Cessna 172 as boxes: [cx, cy, cz, sx, sy, sz, colour, rotation about the nose axis]. The nose points along +z, up is +y and the
-  // right wing is +x. Real size: 8.3 m long, 11 m wingspan, high wing braced by struts, fixed tricycle gear. `body` is the stripe
-  // colour (each pilot has their own), `accent` the cowling and tail trim.
-  function planeBoxes(body, accent) {
-    const white = [0.94, 0.95, 0.96], glass = [0.12, 0.17, 0.24], dark = [0.14, 0.15, 0.17], grey = [0.62, 0.64, 0.68];
-    const boxes = [
-      [0, 0, 0.3, 1.2, 1.4, 3.1, white], [0, 0.35, -0.1, 1.24, 0.5, 2.2, white],                 // cabin
-      [0, -0.05, 2.5, 1.1, 1.0, 1.5, white], [0, -0.05, 3.28, 1.14, 1.04, 0.1, accent],            // engine cowling
-      [0, 0.1, -2.5, 0.85, 0.95, 2.0, white], [0, 0.22, -4.0, 0.5, 0.6, 1.1, white],               // tail cone
-      [0, 0.48, 1.75, 0.95, 0.42, 0.12, glass], [0.61, 0.38, 0.55, 0.04, 0.55, 1.6, glass], [-0.61, 0.38, 0.55, 0.04, 0.55, 1.6, glass], // windscreen and doors
-      [0.5, 0.45, -1.2, 0.04, 0.32, 0.6, glass], [-0.5, 0.45, -1.2, 0.04, 0.32, 0.6, glass],
-      [0.62, -0.1, 0.3, 0.03, 0.14, 6.6, body], [-0.62, -0.1, 0.3, 0.03, 0.14, 6.6, body],         // cheat line
-      [0, 1.02, 0.35, 11, 0.13, 1.6, white], [-5.35, 1.02, 0.35, 0.3, 0.15, 1.62, body], [5.35, 1.02, 0.35, 0.3, 0.15, 1.62, body], // high wing
-      [0, 1.0, 0.35, 1.2, 0.18, 1.7, white],
-      [0.95, 0.2, 0.4, 0.09, 1.65, 0.16, white, -0.98], [-0.95, 0.2, 0.4, 0.09, 1.65, 0.16, white, 0.98],     // wing struts
-      [0, 0.32, -4.3, 3.5, 0.1, 0.95, white], [0, 1.0, -4.15, 0.12, 1.5, 1.35, white], [0, 1.55, -4.3, 0.13, 0.55, 0.7, body],  // tail
-      [0, 0.18, 3.25, 0.34, 0.34, 0.5, accent], [0, 0.18, 3.62, 0.12, 1.9, 0.1, dark],             // spinner and propeller
-      [0, -0.62, 1.7, 0.1, 0.9, 0.12, grey], [0, -0.92, 1.7, 0.14, 0.34, 0.38, dark],              // nose gear
-      [0.95, -0.62, 0.3, 0.1, 0.95, 0.12, grey, 0.4], [-0.95, -0.62, 0.3, 0.1, 0.95, 0.12, grey, -0.4], // main gear legs
-      [1.3, -0.88, 0.3, 0.22, 0.44, 0.7, white], [-1.3, -0.88, 0.3, 0.22, 0.44, 0.7, white]       // wheel pants
-    ];
-    return boxes;
-  }
-  const CUBE = (() => { // a unit cube as 36 vertices with face normals
-    const faces = [[[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [-1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 0, -1], [0, 1, 0]], [[-1, 0, 0], [0, 0, 1], [0, 1, 0]], [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]]];
-    const out = [];
-    for (const [n, u, v] of faces) for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]]) out.push(...[0, 1, 2].map(i => (n[i] + u[i] * a + v[i] * b) * 0.5), ...n);
-    return out;
-  })();
-
   function Renderer(canvas) {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: false }) || canvas.getContext('experimental-webgl');
     if (!gl) throw new Error('WebGL is not available in this browser.');
@@ -104,18 +74,13 @@
     this.gl.viewport(0, 0, w, h); return w / h;
   };
   // Vertex data for one plane colour scheme, built once.
-  Renderer.prototype.planeBuffer = function (key, body, accent) {
+  Renderer.prototype.planeBuffer = function (key, body, accent, model) {
     if (this.planeCache.has(key)) return this.planeCache.get(key);
-    const gl = this.gl, data = [];
-    for (const [cx, cy, cz, sx, sy, sz, color, tilt = 0] of planeBoxes(body, accent)) {
-      const c = Math.cos(tilt), s = Math.sin(tilt);       // a box can be tilted about the nose axis (struts and gear legs)
-      for (let i = 0; i < CUBE.length; i += 6) {
-        const x = CUBE[i] * sx, y = CUBE[i + 1] * sy, nx = CUBE[i + 3], ny = CUBE[i + 4];
-        data.push(cx + x * c - y * s, cy + x * s + y * c, cz + CUBE[i + 2] * sz, nx * c - ny * s, nx * s + ny * c, CUBE[i + 5], color[0], color[1], color[2]);
-      }
-    }
-    const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-    const entry = { buffer, count: data.length / 9 }; this.planeCache.set(key, entry); return entry;
+    const gl = this.gl, data = FlightModels.build(model || 'plane', body, accent);   // smooth lofted models: see flight-models.js
+    const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    const entry = { buffer, count: data.length / 9, prop: null }, prop = FlightModels.propeller(model || 'plane');
+    if (prop) { const propBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, propBuffer); gl.bufferData(gl.ARRAY_BUFFER, prop.data, gl.STATIC_DRAW); entry.prop = { buffer: propBuffer, count: prop.data.length / 9, pivot: prop.pivot }; }
+    this.planeCache.set(key, entry); return entry;
   };
   Renderer.prototype.bindAttributes = function (buffer) {
     const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -133,7 +98,7 @@
     gl.uniform3fv(this.skyUniforms.uTop, top); gl.uniform3fv(this.skyUniforms.uHorizon, horizon); gl.uniform1f(this.skyUniforms.uHorizonLine, horizonLine);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer); const sa = gl.getAttribLocation(this.sky, 'aPos'); gl.enableVertexAttribArray(sa); gl.vertexAttribPointer(sa, 2, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.enable(gl.DEPTH_TEST); gl.useProgram(this.world);
-    const view = mat.look(camera.position, camera.forward, camera.up), viewProj = mat.multiply(mat.perspective(camera.fov || 1, aspect, Math.min(80, 3 + altitude * 0.04), 50000), view);
+    const view = mat.look(camera.position, camera.forward, camera.up), viewProj = mat.multiply(mat.perspective(camera.fov || 1, aspect, camera.near ?? Math.min(12, 3 + altitude * 0.04), 50000), view);
     gl.uniformMatrix4fv(this.uniforms.uViewProj, false, viewProj); gl.uniform3fv(this.uniforms.uSun, this.sun); gl.uniform3fv(this.uniforms.uFog, this.fog); gl.uniform3fv(this.uniforms.uCamera, camera.position); gl.uniform1f(this.uniforms.uDensity, density);
     const identity = mat.identity(), normalIdentity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const pieces = [...this.tiles.values(), ...(this.home ? [this.home] : [])];   // the first region last, so the airport lies on top
@@ -142,13 +107,21 @@
     for (const piece of pieces) if (piece.ground) { this.bindAttributes(piece.ground.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.ground.count); }
     gl.enable(gl.DEPTH_TEST); for (const piece of pieces) if (piece.solid) { this.bindAttributes(piece.solid.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.solid.count); }
     for (const plane of planes) {
-      const entry = this.planeBuffer(`${plane.body}|${plane.accent}`, plane.body, plane.accent);
+      const entry = this.planeBuffer(`${plane.model || 'plane'}|${plane.body}|${plane.accent}`, plane.body, plane.accent, plane.model);
       // Heading about the vertical, then the nose up by the pitch, then roll about the nose (positive roll is right wing down).
-      const rotation = mat.multiply(mat.rotateY(plane.heading), mat.multiply(mat.rotateX(-plane.pitch), mat.rotateZ(-plane.roll)));
-      const model = mat.multiply(mat.translate(plane.x, plane.y + 1.1, plane.z), mat.multiply(rotation, mat.scale(plane.scale || 1, plane.scale || 1, plane.scale || 1)));
+      // A jet carries its full orientation (so loops and inverted flight draw right); the others are drawn from the three angles.
+      let rotation = mat.multiply(mat.rotateY(plane.heading), mat.multiply(mat.rotateX(-plane.pitch), mat.rotateZ(-plane.roll)));
+      if (plane.axes) { rotation = mat.identity(); rotation.set([...plane.axes.r, 0, ...plane.axes.u, 0, ...plane.axes.f, 0], 0); }
+      const model = mat.multiply(mat.translate(plane.x, plane.y + (plane.baseY ?? 1.1), plane.z), mat.multiply(rotation, mat.scale(plane.scale || 1, plane.scale || 1, plane.scale || 1)));
       gl.uniformMatrix4fv(this.uniforms.uModel, false, model);
       gl.uniformMatrix3fv(this.uniforms.uNormal, false, new Float32Array([rotation[0], rotation[1], rotation[2], rotation[4], rotation[5], rotation[6], rotation[8], rotation[9], rotation[10]]));
       this.bindAttributes(entry.buffer); gl.drawArrays(gl.TRIANGLES, 0, entry.count);
+      if (entry.prop) {   // the propeller turns about the nose axis; `spin` is its angle in radians
+        const [px, py, pz] = entry.prop.pivot, turn = mat.rotateZ(plane.spin || 0), spun = mat.multiply(model, mat.multiply(mat.translate(px, py, pz), mat.multiply(turn, mat.translate(-px, -py, -pz)))), r = mat.multiply(rotation, turn);
+        gl.uniformMatrix4fv(this.uniforms.uModel, false, spun);
+        gl.uniformMatrix3fv(this.uniforms.uNormal, false, new Float32Array([r[0], r[1], r[2], r[4], r[5], r[6], r[8], r[9], r[10]]));
+        this.bindAttributes(entry.prop.buffer); gl.drawArrays(gl.TRIANGLES, 0, entry.prop.count);
+      }
     }
     return viewProj;
   };
