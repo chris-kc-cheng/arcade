@@ -336,3 +336,10 @@ test('a closed island that starts inside the box but crosses its edge is one pie
   const inside = (x, z) => OSM.inside(rings[0], x, z);
   assert.ok(inside(500, 100), 'the island is land'); assert.ok(!inside(50, 800), 'the open sea is not'); assert.ok(!inside(950, 950));
 });
+
+test('the land base is its own mesh, drawn before streamed tiles so it never covers their sea', () => {
+  const parts = OSM.meshParts(OSM.fallbackScene('VHHH'));
+  assert.equal(parts.base.length, 6 * 9, 'one big land square'); assert.ok(parts.ground.length > 0 && parts.solid.length > 0);
+  assert.ok(parts.base.every((v, i) => i % 9 !== 1 || v < 0), 'the base lies below all other ground');
+  assert.equal(OSM.buildMesh(OSM.fallbackScene('VHHH')).length, parts.base.length + parts.ground.length + parts.solid.length);
+});

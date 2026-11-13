@@ -188,12 +188,19 @@
   function streamTiles(now) {
     if (!scene || !world || scene.source !== 'openstreetmap' || state === 'loading' || now - streaming.last < 400) return;
     streaming.last = now;
-    const reach = Math.min(14000, Math.max(3000, plane.speed * 14)), ahead = [Math.sin(plane.heading), Math.cos(plane.heading)], wanted = [[plane.x, plane.z]];
-    for (const f of [1, 0.5]) wanted.push([plane.x + ahead[0] * reach * f, plane.z + ahead[1] * reach * f]);
-    for (let k = 0; k < 8; k++) wanted.push([plane.x + Math.cos(k * Math.PI / 4) * 3200, plane.z + Math.sin(k * Math.PI / 4) * 3200]);
+    // What to have ready: the ground around the plane, everything on the line ahead (as far as the plane will fly in the next
+    // minute of simulated time, and as far as the view reaches), a fan to each side of the nose, and the whole area the map shows.
+    const heading = plane.heading, fx = Math.sin(heading), fz = Math.cos(heading), minute = plane.speed * 60 * scale;
+    const reach = Math.min(40000, Math.max(12000, minute)), wanted = [[0, 0]];
+    for (let k = 0; k < 8; k++) wanted.push([Math.cos(k * Math.PI / 4) * 3200, Math.sin(k * Math.PI / 4) * 3200]);
+    for (let d = 2500; d <= reach; d += 2500) { wanted.push([fx * d, fz * d]); if (d <= 15000) for (const turn of [-0.45, 0.45]) wanted.push([Math.sin(heading + turn) * d, Math.cos(heading + turn) * d]); }
+    const span = ZOOMS[zoom] / 2; for (const dx of [-span, 0, span]) for (const dz of [-span, 0, span]) wanted.push([dx, dz]);
+    wanted.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
     const token = loadingToken;
-    for (const [x, z] of wanted) {
-      if (streaming.pending.size >= 2 || world.covered(x, z)) continue;
+    for (const [dx, dz] of wanted) {
+      const x = plane.x + dx, z = plane.z + dz;
+      if (streaming.pending.size >= 3) break;
+      if (world.covered(x, z)) continue;
       const [i, j] = OSM.tileCell(scene, x, z), key = OSM.tileKey(i, j);
       if (streaming.pending.has(key) || world.tiles.has(key) || (streaming.failed.get(key) || 0) > now) continue;
       streaming.pending.set(key, true);
@@ -206,7 +213,7 @@
   function evictTiles() {
     const far = tile => Math.hypot((tile.rect[0] + tile.rect[2]) / 2 - plane.x, (tile.rect[1] + tile.rect[3]) / 2 - plane.z);
     const extra = [...world.tiles.values()].filter(tile => tile !== world.home).sort((a, b) => far(b) - far(a));
-    while (extra.length > 12) { const tile = extra.shift(); world.removeTile(tile.key); renderer.removeTile(tile.key); }
+    while (extra.length > 30) { const tile = extra.shift(); world.removeTile(tile.key); renderer.removeTile(tile.key); }
   }
 
   // ---- the 2D map in the top right corner ----------------------------------------------------------------------------------
@@ -261,7 +268,7 @@
     if (token !== loadingToken) return;
     scene = loaded; progress('Building the 3D scene…', 0.8); await nextFrame();
     world = OSM.createWorld(scene);
-    const mesh = OSM.meshParts(scene); renderer.clearTiles(); renderer.setScene(mesh.ground, mesh.solid); notice = note; others = []; streaming.pending.clear(); streaming.failed.clear();
+    const mesh = OSM.meshParts(scene); renderer.clearTiles(); renderer.setScene(mesh.ground, mesh.solid, mesh.base); notice = note; others = []; streaming.pending.clear(); streaming.failed.clear();
     window.flightState = () => ({ world, sceneObject: scene, scene: { source: scene.source, code: scene.code, buildings: scene.buildings.length, airport: scene.airport, tiles: world.tiles.size, loading: streaming.pending.size, runway: { ref: scene.runway.ref, headingDegrees: scene.runway.heading * 180 / Math.PI, length: scene.runway.length } }, plane, others, state });
     respawn(true); $('#loading').hidden = true; $('#reset').disabled = socket?.readyState !== WebSocket.OPEN; focusView();
   }

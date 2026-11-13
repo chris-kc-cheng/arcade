@@ -92,7 +92,8 @@
   // Map pieces are two buffers each: flat ground (painted in order, no depth test, so layers never flicker) and solids (buildings).
   const upload = (gl, data) => { if (!data.length) return null; const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return { buffer, count: data.length / 9 }; };
   const release = (gl, piece) => { if (piece) { if (piece.ground) gl.deleteBuffer(piece.ground.buffer); if (piece.solid) gl.deleteBuffer(piece.solid.buffer); } };
-  Renderer.prototype.setScene = function (ground, solid) { release(this.gl, this.home); this.home = { ground: upload(this.gl, ground), solid: upload(this.gl, solid) }; };
+  // `base` is the land everywhere, drawn before any streamed tile so it can never cover the sea of a tile.
+  Renderer.prototype.setScene = function (ground, solid, base) { release(this.gl, this.home); if (this.base) this.gl.deleteBuffer(this.base.buffer); this.base = base ? upload(this.gl, base) : null; this.home = { ground: upload(this.gl, ground), solid: upload(this.gl, solid) }; };
   // Streamed map tiles (more ground and buildings as the plane flies on) come and go.
   Renderer.prototype.setTile = function (key, ground, solid) { this.removeTile(key); this.tiles.set(key, { ground: upload(this.gl, ground), solid: upload(this.gl, solid) }); };
   Renderer.prototype.removeTile = function (key) { release(this.gl, this.tiles.get(key)); this.tiles.delete(key); };
@@ -137,7 +138,8 @@
     const identity = mat.identity(), normalIdentity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const pieces = [...this.tiles.values(), ...(this.home ? [this.home] : [])];   // the first region last, so the airport lies on top
     gl.uniformMatrix4fv(this.uniforms.uModel, false, identity); gl.uniformMatrix3fv(this.uniforms.uNormal, false, normalIdentity);
-    gl.disable(gl.DEPTH_TEST); for (const piece of pieces) if (piece.ground) { this.bindAttributes(piece.ground.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.ground.count); }
+    gl.disable(gl.DEPTH_TEST); if (this.base) { this.bindAttributes(this.base.buffer); gl.drawArrays(gl.TRIANGLES, 0, this.base.count); }
+    for (const piece of pieces) if (piece.ground) { this.bindAttributes(piece.ground.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.ground.count); }
     gl.enable(gl.DEPTH_TEST); for (const piece of pieces) if (piece.solid) { this.bindAttributes(piece.solid.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.solid.count); }
     for (const plane of planes) {
       const entry = this.planeBuffer(`${plane.body}|${plane.accent}`, plane.body, plane.accent);

@@ -448,10 +448,10 @@
     const [wx, wz] = scene.runway.threshold, dx = Math.sin(scene.runway.heading), dz = Math.cos(scene.runway.heading);
     for (let t = 30; t + 18 < scene.runway.length - 30; t += 40) g.flat(ribbon([[wx + dx * t, wz + dz * t], [wx + dx * (t + 18), wz + dz * (t + 18)]], 0.9), 0.08, COLORS.paint);
     for (let i = -4; i <= 4; i++) { if (!i) continue; const ox = Math.cos(scene.runway.heading) * i * 3, oz = -Math.sin(scene.runway.heading) * i * 3; g.flat(ribbon([[wx + ox + dx * 8, wz + oz + dz * 8], [wx + ox + dx * 40, wz + oz + dz * 40]], 1.2), 0.08, COLORS.paint); }
-    return { ground: new Float32Array([...land, ...home.ground, ...airport]), solid: home.solid };
+    return { base: new Float32Array(land), ground: new Float32Array([...home.ground, ...airport]), solid: home.solid };
   }
   // Everything in one array (ground first), for tests and simple uses.
-  function buildMesh(scene) { const { ground, solid } = meshParts(scene), all = new Float32Array(ground.length + solid.length); all.set(ground); all.set(solid, ground.length); return all; }
+  function buildMesh(scene) { const { base, ground, solid } = meshParts(scene), all = new Float32Array(base.length + ground.length + solid.length); all.set(base); all.set(ground, base.length); all.set(solid, base.length + ground.length); return all; }
 
   return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
 });
