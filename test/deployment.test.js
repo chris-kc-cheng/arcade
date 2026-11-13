@@ -83,7 +83,7 @@ test('Hostinger current symlink exposes the built public directory', () => {
 });
 
 test('every arcade app loads the shared navigation and debug platform', () => {
-  const pages = ['index.html', 'fighter.html', 'snake.html', 'bigtwo.html', 'typing.html', 'wordle.html', 'poll.html', 'tank.html', 'slushy.html', 'typohunt.html', 'twinspot.html'];
+  const pages = ['index.html', 'fighter.html', 'snake.html', 'bigtwo.html', 'typing.html', 'wordle.html', 'poll.html', 'tank.html', 'slushy.html', 'typohunt.html', 'twinspot.html', 'flight.html'];
   for (const page of pages) assert.match(read(`public/${page}`), /<script src="\/platform\.js"><\/script>/, page);
 
   const platform = read('public/platform.js');

@@ -13,7 +13,7 @@ const net = require('node:net');
 const WebSocket = require('ws');
 
 const ROOT = path.resolve(__dirname, '..');
-const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy', 'typohunt', 'twinspot'];
+const GAMES = ['board', 'tank', 'penalty', 'fighter', 'snake', 'bigtwo', 'typing', 'wordle', 'poll', 'cube', 'slushy', 'typohunt', 'twinspot', 'flight'];
 const WIDTH = 1920, HEIGHT = 1080;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -35,7 +35,7 @@ function dimensions(file) {
 function checkShowcase(root = ROOT) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const images = [...readme.matchAll(/<img\b[^>]*src="(public\/screenshots\/([^".]+)\.(?:png|svg))"[^>]*>/g)];
-  if (images.length !== GAMES.length) throw new Error('README must showcase exactly thirteen experiences');
+  if (images.length !== GAMES.length) throw new Error('README must showcase exactly fourteen experiences');
   let common;
   const found = new Set();
   for (const [tag, source, game] of images) {
@@ -225,6 +225,13 @@ async function capture() {
           await tab.send({ type: 'pick', index: wrong[3] }); await pause(150);
           jo.send({ type: 'pick', index: first.tokens.findIndex((_, index) => !wrong.includes(index)) });
           await waitFor(async () => Object.keys((await tab.state('typoState')).found).length === 3, 'typo hunt finds');
+        } else if (game === 'flight') {
+          // The page reads OpenStreetMap itself, so this waits for it (or its offline snapshot) to finish. A second pilot flies a little
+          // way ahead on the same approach: only its position is sent, through the real protocol.
+          await waitFor(() => tab.evaluate("typeof flightState === 'function' && flightState().state === 'flying'"), 'the flight scene', 150000);
+          const sam = await peer('flight', 'Sam');
+          for (let i = 0; i < 3; i++) { sam.send({ type: 'pose', lat: 43.6201, lon: -79.4327, alt: 190, heading: 1.24, pitch: 0.03, roll: 0.05, throttle: 0.2 }); await pause(150); }
+          await pause(2500);
         } else if (game === 'twinspot') {
           // Hard level, a few finished pairs for the ranking, then a fresh pair is captured while it is still being hunted.
           // The match is the item whose name appears on both cards; the server still decides every score.
@@ -325,7 +332,7 @@ async function capture() {
     let readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     readme = readme.replace(/public\/screenshots\/(typing|wordle|poll)\.svg/g, 'public/screenshots/$1.png');
     readme = readme.replace(/(alt="[^"]*) illustration"/g, '$1 screenshot"');
-    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll thirteen previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
+    readme = readme.replace(/<!-- screenshot-status:start -->[\s\S]*?<!-- screenshot-status:end -->/, `<!-- screenshot-status:start -->\nAll fourteen previews are actual local app captures at ${WIDTH}×${HEIGHT}, using synthetic test players. Every thumbnail is displayed at 320×180.\n<!-- screenshot-status:end -->`);
     fs.writeFileSync(path.join(ROOT, 'README.md'), readme);
     fs.writeFileSync(path.join(ROOT, 'public/screenshots/capture-manifest.json'), JSON.stringify({ capturedAt: new Date().toISOString(), method: 'Chromium CDP, local server, 100% scale', scenes: evidence }, null, 2) + '\n');
     checkShowcase();

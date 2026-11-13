@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0f2723"><meta name="application-name" content="Arcade"><meta name="apple-mobile-web-app-title" content="Arcade"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180"><title>Flight Sim · Arcade</title><link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48"><link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any"><link rel="stylesheet" href="/platform.css"><link rel="stylesheet" href="/flight.css"></head>
+<body><header class="arcade-topbar" data-arcade-game="flight"><button id="reset" type="button" disabled>RESPAWN ↻</button></header>
+<main class="stage" id="stage"><canvas id="view" aria-label="3D view from the plane. Fly with the keyboard." tabindex="0"></canvas><canvas id="hud" aria-hidden="true"></canvas>
+<section class="toolbar" aria-label="Flight controls">
+<select id="airport" aria-label="Airport to land at" title="Airport"><option value="CYTZ">Toronto Billy Bishop</option><option value="VHHH">Hong Kong International</option><option value="RJTT">Tokyo Haneda</option></select>
+<div class="group" role="group" aria-label="Simulation speed"><button type="button" data-scale="1" aria-pressed="true">1×</button><button type="button" data-scale="2" aria-pressed="false">2×</button><button type="button" data-scale="5" aria-pressed="false">5×</button><button type="button" data-scale="10" aria-pressed="false">10×</button><button type="button" data-scale="50" aria-pressed="false">50×</button><button type="button" data-scale="100" aria-pressed="false">100×</button></div>
+<label class="group throttle"><span class="label">THR</span><input id="throttle" type="range" min="0" max="100" value="17" aria-label="Throttle"><output id="throttleValue">17%</output></label>
+<div class="group" role="group" aria-label="Flaps"><span class="label">FLAPS</span><button type="button" id="flapsUp" aria-label="Retract flaps one notch (V)">−</button><output id="flapsValue" aria-live="polite">0°</output><button type="button" id="flapsDown" aria-label="Extend flaps one notch (F)">+</button></div>
+<div class="group"><button type="button" id="camera" aria-pressed="false">Camera</button><button type="button" id="help" aria-pressed="false">Keys</button><a class="credit" id="source" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" aria-label="OpenStreetMap copyright">© OSM</a></div>
+</section>
+<section class="minimap" aria-label="Map"><canvas id="map" role="img" aria-label="Map of your plane and the other planes, north up"></canvas><div class="zoom"><button type="button" id="zoomIn" aria-label="Zoom map in">+</button><button type="button" id="zoomOut" aria-label="Zoom map out">−</button></div></section>
+<section id="keys" class="keys" hidden aria-label="Keyboard controls"><dl>
+<div><dt>W / ↑</dt><dd>nose down (stick forward)</dd></div><div><dt>S / ↓</dt><dd>nose up (stick back)</dd></div>
+<div><dt>A / ←</dt><dd>bank left</dd></div><div><dt>D / →</dt><dd>bank right</dd></div>
+<div><dt>Q / E</dt><dd>rudder left / right</dd></div><div><dt>Shift · PgUp</dt><dd>more throttle</dd></div>
+<div><dt>Z · PgDn</dt><dd>less throttle</dd></div><div><dt>F / V</dt><dd>flaps down / up one notch</dd></div>
+<div><dt>Space · B</dt><dd>wheel brakes</dd></div><div><dt>1 – 6</dt><dd>speed 1× 2× 5× 10× 50× 100×</dd></div>
+<div><dt>C</dt><dd>chase / cockpit camera</dd></div><div><dt>R</dt><dd>respawn on final approach</dd></div><div><dt>H</dt><dd>show / hide these keys</dd></div></dl></section>
+<div id="loading" class="overlay" role="status" aria-live="polite"><div><h1>Flight<span>Sim</span></h1><p id="loadingText">Reading OpenStreetMap…</p><i class="bar"><b id="loadingBar"></b></i></div></div>
+<div id="crash" class="overlay crash" hidden><div><h2>CRASHED</h2><p id="crashText"></p><button type="button" id="again">Try again (R)</button></div></div>
+</main>
+<script src="/sso.js"></script><script src="/platform.js"></script><script src="/flight-physics.js"></script><script src="/flight-osm.js"></script><script src="/flight-render.js"></script><script src="/flight.js"></script></body></html>

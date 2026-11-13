@@ -75,18 +75,18 @@ function platform(game = 'board', legacy = false, options = {}) {
   context.window = context; vm.runInNewContext(fs.readFileSync(require.resolve('../public/sso.js'), 'utf8'), context); vm.runInNewContext(fs.readFileSync(require.resolve('../public/platform.js'), 'utf8'), context);
   return {context, document, header, reset, sent, prompts, sockets, storage, timers, replaced, connect() { const socket = new context.WebSocket('ws://localhost/?room=test'); socket.emit('open'); return socket; }, packet(socket, message) { socket.emit('message',{data:JSON.stringify(message)}); }};
 }
-const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt','twinspot'];
+const routes = ['board','tank','penalty','fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt','twinspot','flight'];
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const ok = body => ({ok:true, status:200, json:async () => body});
 const fail = (status, detail) => ({ok:false, status, statusText:String(status), json:async () => ({detail})});
 
-test('all thirteen games mount one identical shared shell and current route', () => {
+test('all fourteen games mount one identical shared shell and current route', () => {
   const signature = node => `${node.tagName}.${node.className}[${node.children.map(signature).join(',')}]`;
   let expected;
   for (const game of routes) {
     const env = platform(game); const {header,document,context} = env;
     const api = context.ArcadePlatform.mount(header,{game});
-    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,13);
+    const links = header.querySelectorAll('.arcade-nav a'); assert.equal(links.length,14);
     assert.equal(links.filter(link => link.getAttribute('aria-current') === 'page').length,1);
     assert.equal(links.find(link => link.getAttribute('aria-current') === 'page').href,game === 'board' ? '/' : `/${game}`);
     links.forEach(link => { assert.ok(link.getAttribute('aria-label')); assert.ok(link.querySelector('svg'), 'every game has a line icon'); });
@@ -126,7 +126,7 @@ test('the games menu opens from the title, moves with the arrow keys, and Escape
   assert.equal(menu.hidden,true); toggle.onclick(); assert.equal(menu.hidden,false); assert.equal(toggle.getAttribute('aria-expanded'),'true');
   const links = menu.querySelectorAll('a'); assert.equal(env.document.activeElement,links[0]);
   const key = name => env.header.querySelector('.arcade-games').onkeydown({key:name,target:env.document.activeElement,preventDefault() {}});
-  key('ArrowDown'); assert.equal(env.document.activeElement,links[1]); key('End'); assert.equal(env.document.activeElement,links[12]); key('ArrowDown'); assert.equal(env.document.activeElement,links[0]); key('ArrowUp'); assert.equal(env.document.activeElement,links[12]);
+  key('ArrowDown'); assert.equal(env.document.activeElement,links[1]); key('End'); assert.equal(env.document.activeElement,links[13]); key('ArrowDown'); assert.equal(env.document.activeElement,links[0]); key('ArrowUp'); assert.equal(env.document.activeElement,links[13]);
   env.document.listeners.keydown[0]({key:'Escape',preventDefault() {}}); assert.equal(menu.hidden,true); assert.equal(toggle.getAttribute('aria-expanded'),'false'); assert.equal(env.document.activeElement,toggle);
   toggle.onclick(); env.document.listeners.pointerdown[0]({target:env.document.body}); assert.equal(menu.hidden,true,'an outside click closes it');
   toggle.onclick(); env.header.querySelector('.arcade-rooms-toggle').onclick(); assert.equal(menu.hidden,true,'only one menu is open at a time');
@@ -176,7 +176,7 @@ test('debug retains at most 250 entries, accounts bytes, clears, and restores ke
 });
 
 test('legacy entry points delegate shared features and game shortcuts respect navigation', () => {
-  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt','twinspot']) {
+  for(const game of ['fighter','snake','bigtwo','typing','wordle','poll','cube','slushy','typohunt','twinspot','flight']) {
     const html = fs.readFileSync(require.resolve(`../public/${game}.html`),'utf8');
     assert.match(html,new RegExp(`<header class="arcade-topbar" data-arcade-game="${game}">`));
     assert.match(html,/<script src="\/sso\.js"><\/script><script src="\/platform\.js"><\/script>/,'the login client loads before the platform');

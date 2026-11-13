@@ -12,6 +12,7 @@ const { words: wordleWords, scoreGuess, letterStatuses, randomWord } = require('
 
 const typoHunt = require('./lib/typohunt');
 const twinSpot = require('./lib/twinspot');
+const flight = require('./lib/flight');
 const { createAppDirectory } = require('./lib/apps');
 
 const { Worker } = require('node:worker_threads');
@@ -22,8 +23,8 @@ const DISCONNECT_GRACE_MS = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS) 
 const developmentMode = process.argv.includes('--dev');
 const publicDir = path.join(__dirname, 'public');
 const reloadClients = new Set();
-const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy', '/typohunt', '/twinspot']);
-const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html'], ['/typohunt', 'typohunt.html'], ['/twinspot', 'twinspot.html']]);
+const gamePaths = new Set(['/', '/tank', '/penalty', '/fighter', '/snake', '/bigtwo', '/typing', '/wordle', '/poll', '/cube', '/slushy', '/typohunt', '/twinspot', '/flight']);
+const routeFiles = new Map([['/', 'index.html'], ['/tank', 'index.html'], ['/penalty', 'index.html'], ['/fighter', 'fighter.html'], ['/snake', 'snake.html'], ['/bigtwo', 'bigtwo.html'], ['/typing', 'typing.html'], ['/wordle', 'wordle.html'], ['/poll', 'poll.html'], ['/cube', 'cube.html'], ['/slushy', 'slushy.html'], ['/typohunt', 'typohunt.html'], ['/twinspot', 'twinspot.html'], ['/flight', 'flight.html']]);
 const legacyPaths = new Map([['/index.html', '/'], ['/tank.html', '/tank'], ['/penalty.html', '/penalty'], ['/fighter.html', '/fighter'], ['/snake.html', '/snake'], ['/bigtwo.html', '/bigtwo'], ['/typing.html', '/typing'], ['/wordle.html', '/wordle'], ['/poll.html', '/poll']]);
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -269,6 +270,8 @@ const slushyGames = new Map();
 const typoPlayers = new Map();
 let typoOrder = [], nextTypoNumber = 1, typoTimer;
 const typoGame = typoHunt.newGame();
+const flightPlayers = new Map();
+let nextFlightNumber = 1, flightTimer, flightDirty = false;
 const twinPlayers = new Map();
 let twinOrder = [], nextTwinNumber = 1, twinTimer;
 const twinGame = twinSpot.newGame();
@@ -1172,6 +1175,46 @@ function addTypoHunt(socket, key) {
   });
 }
 
+// Flight simulator: the server only relays where each plane is. Poses are validated, rate limited and checked for plausible speed.
+function broadcastFlight() {
+  flightDirty = false;
+  const planes = [...flightPlayers.values()].filter(player => player.pose && player.socket?.readyState === WebSocket.OPEN).map(flight.publicPlane);
+  for (const viewer of flightPlayers.values()) if (viewer.socket?.readyState === WebSocket.OPEN) viewer.socket.send(JSON.stringify({ type: 'flightState', selfId: viewer.id, serverTime: Date.now(), planes }));
+}
+function addFlight(socket, key) {
+  key = uniqueClientKey(flightPlayers, key);
+  let player = flightPlayers.get(key);
+  if (player) { clearTimeout(player.removeTimer); player.removeTimer = null; player.socket = socket; }
+  else {
+    const number = nextFlightNumber++;
+    player = { key, id: `pilot-${number}`, name: profileName(socket) || `Pilot ${number}`, color: flight.COLORS[(number - 1) % flight.COLORS.length], pose: null, at: 0, socket, removeTimer: null };
+    flightPlayers.set(key, player);
+  }
+  socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
+  // Poses reach everyone ten times a second, only when something changed.
+  flightTimer ??= setInterval(() => { if (flightDirty) broadcastFlight(); }, 100);
+  broadcastFlight();
+  socket.on('message', raw => {
+    if (player.socket !== socket) return;
+    let source; try { source = JSON.parse(raw.toString()); } catch { return; }
+    if (!source || typeof source !== 'object') return;
+    if (source.type === 'setName') { const name = profileName(socket); if (name) { player.name = name; flightDirty = true; } return; }
+    const message = flight.cleanFlightMessage(source);
+    if (!message) return;
+    // A respawn removes the plane for others until the pilot reports a new position on final approach.
+    if (message.type === 'respawn') { player.pose = null; player.at = 0; flightDirty = true; return; }
+    const now = Date.now();
+    if (now - player.at < flight.MIN_INTERVAL_MS) return;
+    if (!flight.plausible(player.pose, message, player.at ? now - player.at : Infinity)) return;
+    player.pose = message; player.at = now; flightDirty = true;
+  });
+  socket.on('close', () => {
+    if (player.socket !== socket) return;
+    player.socket = null; flightDirty = true;
+    scheduleRemoval(player, () => { flightPlayers.delete(key); flightDirty = true; });
+  });
+}
+
 function activeTwinPlayers() { return twinOrder.slice(0, twinSpot.MAX_PLAYERS).map(key => twinPlayers.get(key)).filter(Boolean); }
 function broadcastTwinSpot() {
   const now = Date.now(), active = activeTwinPlayers(), game = twinSpot.publicGame(twinGame, now);
@@ -1272,6 +1315,7 @@ wss.on('connection', (socket, request) => {
   if (room === 'slushy') { addSlushy(socket, key); return; }
   if (room === 'typohunt') { addTypoHunt(socket, key); return; }
   if (room === 'twinspot') { addTwinSpot(socket, key); return; }
+  if (room === 'flight') { addFlight(socket, key); return; }
   if (room === 'cube') { addCube(socket); return; }
   if (room === 'tanks') {
     addTank(socket, key);

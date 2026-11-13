@@ -71,3 +71,7 @@ The Typo Hunt scene switches the room to level 5 and waits for the countdown. Th
 ## Twin Spot capture
 
 The Twin Spot scene switches the room to the hard level, then three synthetic players score and miss through the real protocol: the page's own player and Sam each find a pair, and Jo makes one wrong click. The shot is taken of the fresh pair that is dealt after the last find, so it shows words and emoji at random sizes and rotations plus the ranking. The scene finds each match by the name shared by the two copies; the server still judges every click.
+
+## Flight Sim capture
+
+The Flight Sim scene waits for the page to read OpenStreetMap (or fall back to its offline snapshot) and start flying, then a second synthetic pilot reports a position ahead on the approach through the real protocol, so the shot shows the chase view, the HUD and another plane over 3D Toronto (Billy Bishop is the default airport). It needs WebGL in the capture browser and, for real buildings, network access to an Overpass server; without it the offline snapshot is captured. All fourteen captures are refreshed together.
