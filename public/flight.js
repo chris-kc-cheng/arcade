@@ -5,7 +5,7 @@
   const clientId = (() => { let id = sessionStorage.getItem('arcade-client'); if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('arcade-client', id); } return id; })();
   const SCALES = [1, 2, 5, 10, 50, 100], FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
   const streaming = { pending: new Map(), failed: new Map(), last: 0 }, ZOOMS = [2000, 6000, 20000, 60000], FLAPS = [0, 10, 20, 30];
-  let spinSelf = 0, crashedFor = 0, look = { yaw: 0, pitch: 0 }, zoom = 1, mapAt = 0, hudRead = null, hudAt = 0;
+  let night = false, ap = { on: false, heading: 0, alt: 0, memo: {}, phase: '', flapAt: 0, km: 0 }, spinSelf = 0, crashedFor = 0, look = { yaw: 0, pitch: 0 }, zoom = 1, mapAt = 0, hudRead = null, hudAt = 0;
   let scene, world, renderer, plane, socket, selfId = '', others = [], scale = 1, cameraMode = 'chase', last = 0, shareAt = 0, reconnect, reconnectDelay = 500, state = 'loading', loadingToken = 0, notice = '';
   const keys = new Set();
   const hudContext = $('#hud').getContext('2d');
@@ -24,9 +24,12 @@
   }
   const progress = (text, fraction) => { $('#loadingText').textContent = text; $('#loadingBar').style.width = `${Math.round(fraction * 100)}%`; };
   const nextFrame = () => new Promise(resolve => setTimeout(resolve, 20));
-  const preferred = () => { let saved = null; try { saved = localStorage.getItem('flight-airport'); } catch { /* optional */ } return OSM.resolveCode(new URLSearchParams(location.search).get('airport') || saved) || OSM.DEFAULT_AIRPORT; };
+  // The airport to start at: the one in the address or the last one, or the default. A code that is not valid goes to Hong Kong (VHHH).
+  const preferred = () => { let saved = null; try { saved = localStorage.getItem('flight-airport'); } catch { /* optional */ } const wanted = new URLSearchParams(location.search).get('airport') || saved; return wanted ? (OSM.resolveCode(wanted) || OSM.FALLBACK_AIRPORT) : OSM.DEFAULT_AIRPORT; };
   // The airports offered while typing: the built-in ones, then some well known codes (any 3 or 4 character code can be typed).
-  for (const [code, o] of Object.entries(OSM.AIRPORTS)) { const option = document.createElement('option'); option.value = code; option.label = o.label; $('#airportList').append(option); }
+  // What the box shows for an airport (its code) or a place (its name: a place has no code).
+  const shownAs = code => { const o = OSM.AIRPORTS[code]; return o && o.place ? o.label : code; };
+  for (const [code, o] of Object.entries(OSM.AIRPORTS)) { const option = document.createElement('option'); option.value = shownAs(code); option.label = o.place ? 'a place to look around, not an airport' : o.label; $('#airportList').append(option); }
   for (const [code, name] of OSM.SUGGESTIONS) { const option = document.createElement('option'); option.value = code; option.label = name; $('#airportList').append(option); }
   let toastTimer = 0; const toast = message => { const box = $('#toast'); box.textContent = message; box.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true; }, 6000); };
 
@@ -44,24 +47,26 @@
   }
 
   const HELP = {
-    airbus: [['W / ↑', 'nose down (stick forward)'], ['S / ↓', 'nose up (stick back)'], ['A / ←', 'bank left'], ['D / →', 'bank right'], ['Q / E', 'rudder left / right'], ['Shift · PgUp', 'more thrust'], ['Z · PgDn', 'less thrust'], ['F / V', 'flaps down / up (UP, 1, 2, 3, FULL)'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / cockpit camera'], ['R', 'respawn on final approach'], ['M', 'switch vehicle (in flight)'], ['H', 'show / hide these keys']],
-    plane: [['W / ↑', 'nose down (stick forward)'], ['S / ↓', 'nose up (stick back)'], ['A / ←', 'bank left'], ['D / →', 'bank right'], ['Q / E', 'rudder left / right'], ['Shift · PgUp', 'more throttle'], ['Z · PgDn', 'less throttle'], ['F / V', 'flaps down / up one notch'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / cockpit camera'], ['R', 'respawn on final approach'], ['M', 'switch vehicle (in flight)'], ['H', 'show / hide these keys']],
-    jet: [['W / ↑', 'nose down (stick forward)'], ['S / ↓', 'nose up (stick back): hold it for a loop'], ['A / ←', 'roll left: hold it for a barrel roll'], ['D / →', 'roll right'], ['Q / E', 'yaw left / right'], ['Drag · J L I K', 'look around the cockpit'], ['Home · double-click', 'look straight ahead'], ['Shift · PgUp', 'more thrust'], ['Z · PgDn', 'less thrust'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'cockpit / outside camera'], ['R', 'respawn'], ['M', 'switch vehicle (in flight)'], ['H', 'show / hide these keys']],
-    drone: [['↑', 'go up'], ['↓', 'go down'], ['←', 'turn left'], ['→', 'turn right'], ['A', 'slide left'], ['D', 'slide right'], ['W', 'forward'], ['S', 'backward'], ['I', 'camera angle up'], ['K', 'camera angle down'], ['—', 'no key: it stays where it is'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / first-person camera'], ['R', 'back to the start'], ['M', 'switch vehicle (in flight)'], ['H', 'show / hide these keys']]
+    airbus: [['W / ↑', 'nose down (stick forward)'], ['S / ↓', 'nose up (stick back)'], ['A / ←', 'bank left'], ['D / →', 'bank right'], ['Q / E', 'rudder left / right'], ['Shift · PgUp', 'more thrust'], ['Z · PgDn', 'less thrust'], ['F / V', 'flaps down / up (UP, 1, 2, 3, FULL)'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / cockpit camera'], ['R', 'respawn on final approach'], ['M', 'switch vehicle (in flight)'], ['P', 'autopilot on / off: flies back to the runway and lands'], ['N', 'night mode on / off'], ['H', 'show / hide these keys']],
+    plane: [['W / ↑', 'nose down (stick forward)'], ['S / ↓', 'nose up (stick back)'], ['A / ←', 'bank left'], ['D / →', 'bank right'], ['Q / E', 'rudder left / right'], ['Shift · PgUp', 'more throttle'], ['Z · PgDn', 'less throttle'], ['F / V', 'flaps down / up one notch'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / cockpit camera'], ['R', 'respawn on final approach'], ['M', 'switch vehicle (in flight)'], ['P', 'autopilot on / off: flies to the runway and lands (untick Land to hold heading and altitude with A / D and W / S)'], ['N', 'night mode on / off'], ['H', 'show / hide these keys']],
+    jet: [['W / ↑', 'nose down (stick forward), progressive'], ['S / ↓', 'nose up (stick back): hold it for a loop (up to 9 g)'], ['A / ←', 'roll left: hold it for a barrel roll'], ['D / →', 'roll right'], ['Q / E', 'yaw left / right'], ['Drag · J L I K', 'look around the cockpit'], ['Home · double-click', 'look straight ahead'], ['Shift · PgUp', 'more thrust'], ['Z · PgDn', 'less thrust'], ['Space · B', 'wheel brakes'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'cockpit / outside camera'], ['R', 'respawn'], ['M', 'switch vehicle (in flight)'], ['P', 'autopilot on / off: flies to the runway and lands (untick Land to hold heading and altitude with A / D and W / S)'], ['N', 'night mode on / off'], ['H', 'show / hide these keys']],
+    drone: [['↑', 'go up'], ['↓', 'go down'], ['←', 'turn left'], ['→', 'turn right'], ['A', 'slide left'], ['D', 'slide right'], ['W', 'forward'], ['S', 'backward'], ['I', 'camera angle up'], ['K', 'camera angle down'], ['—', 'no key: it stays where it is'], ['1 – 6', 'speed 1× 2× 5× 10× 50× 100×'], ['C', 'chase / first-person camera'], ['R', 'back to the start'], ['M', 'switch vehicle (in flight)'], ['P', 'autopilot on / off (then ↑ ↓ set the altitude, ← → the heading)'], ['N', 'night mode on / off'], ['H', 'show / hide these keys']]
   };
   const MODES = ['plane', 'airbus', 'jet', 'drone'], MODE_LABEL = { plane: '', airbus: 'A320', jet: 'JET', drone: 'DRONE' };
   // How high the model's centre is above the ground (the gear), how big it is drawn, and the flap settings of each aircraft.
-  const GEAR = { plane: 1.1, airbus: 3.8, jet: 1.65, drone: 0.1 }, SIZE = { drone: 0.14 }, FLAP_TEXT = { plane: ['0°', '10°', '20°', '30°'], airbus: ['UP', '1', '2', '3', 'FULL'] };
+  const GEAR = { plane: 1.1, airbus: 3.8, jet: 1.65, drone: 0.03 }, SIZE = {}, FLAP_TEXT = { plane: ['0°', '10°', '20°', '30°'], airbus: ['UP', '1', '2', '3', 'FULL'] };
   const hasFlaps = mode => mode === 'plane' || mode === 'airbus';
   let flightMode = (() => { try { const saved = new URLSearchParams(location.search).get('mode') || localStorage.getItem('flight-mode'); return MODES.includes(saved) ? saved : 'plane'; } catch { return 'plane'; } })();
   function renderHelp() {
     const list = $('#keyList'); list.replaceChildren();
     for (const [key, text] of HELP[flightMode]) { const row = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = text; row.append(dt, dd); list.append(row); }
-    $('#flapsGroup').hidden = !hasFlaps(flightMode); document.querySelector('.throttle').hidden = flightMode === 'drone';   // a drone has no throttle $('#mode').value = flightMode;
+    $('#flapsGroup').hidden = !hasFlaps(flightMode); document.querySelector('.throttle').hidden = flightMode === 'drone';   // a drone has no throttle
+    $('#mode').value = flightMode;
   }
 
   // ---- the plane -------------------------------------------------------------------------------------------------------------
   function respawn(notify = true) {
+    setAutopilot(false);
     const a = OSM.finalApproach(scene);
     const options = { x: a.x, z: a.z, heading: a.heading, distance: scene.distance, glide: (scene.place ? 0 : scene.glide) * Math.PI / 180 };
     if (scene.place) {   // sightseeing: start level at cruise, not on a landing approach
@@ -89,6 +94,8 @@
     scale = value;
     document.querySelectorAll('[data-scale]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.scale) === value)));
   }
+  // Night mode (N): dark sky and haze, lit windows, airport lights, blinking obstruction lights on towers, and aircraft lights.
+  function setNight(on) { night = Boolean(on); renderer?.setNight(night); $('#night').setAttribute('aria-pressed', String(night)); try { localStorage.setItem('flight-night', night ? '1' : '0'); } catch { /* optional */ } }
   function setCamera(mode) { cameraMode = mode; look = { yaw: 0, pitch: 0 }; $('#camera').setAttribute('aria-pressed', String(mode === 'cockpit')); }
   function toggleHelp(force) { const open = force ?? $('#keys').hidden; $('#keys').hidden = !open; $('#help').setAttribute('aria-pressed', String(open)); }
   const focusView = () => $('#view').focus({ preventScroll: true });
@@ -99,6 +106,8 @@
     const digit = /^Digit([1-6])$/.exec(event.code);
     if (digit) { setScale(SCALES[Number(digit[1]) - 1]); event.preventDefault(); return; }
     if (event.code === 'KeyM' && state !== 'loading') { setMode(MODES[(MODES.indexOf(flightMode) + 1) % MODES.length]); return; }
+    if (event.code === 'KeyN') { setNight(!night); return; }
+    if (event.code === 'KeyP') { setAutopilot(!ap.on); return; }
     if (event.code === 'Home') { look = { yaw: 0, pitch: 0 }; return; }
     if (event.code === 'KeyC') { setCamera(cameraMode === 'chase' ? 'cockpit' : 'chase'); return; }
     if (event.code === 'KeyH') { toggleHelp(); return; }
@@ -119,12 +128,14 @@
     view.addEventListener('pointermove', event => { if (!drag) return; look.yaw = Math.max(-Math.PI, Math.min(Math.PI, look.yaw + (event.clientX - drag.x) * 0.006)); look.pitch = Math.max(-1.5, Math.min(1.5, look.pitch - (event.clientY - drag.y) * 0.006)); drag = { x: event.clientX, y: event.clientY }; });
     for (const type of ['pointerup', 'pointercancel']) view.addEventListener(type, () => { drag = null; });
     view.addEventListener('dblclick', () => { look = { yaw: 0, pitch: 0 }; }); }
+  $('#night').onclick = () => { setNight(!night); focusView(); };
+  $('#autoPilot').onchange = event => { setAutopilot(event.target.checked); event.target.checked = ap.on; focusView(); };
   $('#again').onclick = () => respawn();
   $('#reset').onclick = () => { if (state !== 'loading') respawn(); };
   $('#throttle').oninput = event => { manualAt.throttle = performance.now(); if (plane) { plane.throttle = Number(event.target.value) / 100; $('#throttleValue').textContent = `${event.target.value}%`; } };
   // Switch vehicle in mid-flight: the position, heading, speed and throttle carry over. After a crash it starts over instead.
   function setMode(next) {
-    flightMode = MODES.includes(next) ? next : 'plane'; look = { yaw: 0, pitch: 0 }; setCamera(flightMode === 'jet' ? 'cockpit' : 'chase');
+    setAutopilot(false); flightMode = MODES.includes(next) ? next : 'plane'; look = { yaw: 0, pitch: 0 }; setCamera(flightMode === 'jet' ? 'cockpit' : 'chase');
     try { localStorage.setItem('flight-mode', flightMode); } catch { /* optional */ } keys.clear(); renderHelp();
     if (!scene || !plane || state === 'loading') return;
     if (state === 'crashed' || plane.crashed) respawn(true); else { P.switchMode(plane, flightMode); syncThrottle(); }
@@ -138,17 +149,28 @@
     const key = text.trim().toLowerCase(); if (searchCache.has(key)) return searchCache.get(key);
     const wait = 1100 - (Date.now() - lastSearchAt); if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));   // the service allows one request a second
     lastSearchAt = Date.now();
-    const response = await fetch(OSM.searchUrl(text)); if (!response.ok) throw new Error(String(response.status));
-    let found = OSM.parseSearch(await response.json()); const query = OSM.enrichQuery(found);
-    if (query) { try { found = OSM.applyTags(found, await fetchOverpass(query, 25000)); } catch (error) { found = found.filter(r => r.code); } } else found = found.filter(r => r.code);
-    searchCache.set(key, found); return found;
+    // 1. airports whose name matches (Nominatim), 2. the place the text names (a city or region), 3. Overpass: airports near that place and
+    // airports whose names contain the text. Any step may fail; the search only fails if none of them worked.
+    const nominatim = async url => { const response = await fetch(url); if (!response.ok) throw new Error(String(response.status)); return response.json(); };
+    let named = [], places = [], nearby = [], worked = 0;
+    try { named = OSM.parseSearch(await nominatim(OSM.searchUrl(text))); worked++; } catch (error) { console.warn('Airport name search failed:', error); }
+    await new Promise(resolve => setTimeout(resolve, 1100));   // the service allows one request a second
+    try { places = OSM.parsePlaces(await nominatim(OSM.searchPlaceUrl(text))); worked++; } catch (error) { console.warn('Place search failed:', error); }
+    // The two Overpass questions (codes of the airports found by name, and airports near the place) are asked at the same time.
+    const enrich = OSM.enrichQuery(named), near = OSM.airportsQuery(text, places);
+    await Promise.all([
+      (async () => { if (enrich) { try { named = OSM.applyTags(named, await fetchOverpass(enrich, 25000)); } catch (error) { named = named.filter(r => r.code); } } else named = named.filter(r => r.code); })(),
+      (async () => { if (near) { try { nearby = OSM.parseAirportElements(await fetchOverpass(near, 30000), places, text); worked++; } catch (error) { console.warn('Nearby airport search failed:', error); } } })()
+    ]);
+    if (!worked) throw new Error('search unavailable');
+    const found = OSM.mergeSearch(named.map(r => ({ ...r, matched: true, km: 0 })), nearby); searchCache.set(key, found); return found;
   }
   function pick(result) { hideResults(); $('#airport').value = result.code; openAirport(result.code); }
   async function searchByName(text) {
     toast(`Searching for “${text}”…`);
     let found; try { found = await searchAirports(text); } catch (error) { toast('The airport search could not be reached. Try an airport code instead.'); return; }
     $('#toast').hidden = true;
-    if (!found.length) { toast(`No airport named “${text}” with a code was found. Try its IATA or ICAO code.`); return; }
+    if (!found.length) { await goToFallback(`No airport matches “${text}”.`); return; }
     if (found.length === 1) { pick(found[0]); return; }
     const list = $('#resultList'); list.replaceChildren();
     for (const r of found) {
@@ -161,7 +183,7 @@
   function submitAirport(raw) {
     const text = String(raw || '').trim(), now = Date.now(); if (!text || (text === lastSubmit.text && now - lastSubmit.at < 800)) return; lastSubmit = { text, at: now }; hideResults();
     const code = OSM.resolveCode(text);
-    if (code && scene && state !== 'loading' && (code === scene.code || code === scene.airport.iata || code === scene.airport.icao)) { $('#airport').value = scene.code; focusView(); return; }
+    if (code && scene && state !== 'loading' && (code === scene.code || code === scene.airport.iata || code === scene.airport.icao)) { $('#airport').value = shownAs(scene.code); focusView(); return; }
     if (code) openAirport(code, { notFound: () => searchByName(text) }); else searchByName(text);
     $('#airport').blur();
   }
@@ -181,6 +203,43 @@
       elevator: axis('noseUp', 'noseDown') * gain, aileron: axis('right', 'left') * gain, rudder: axis('rudderRight', 'rudderLeft') * gain,
       throttleRate: axis('moreThrottle', 'lessThrottle') * 0.5, brake: held('brake')
     };
+  }
+
+  // ---- autopilot (P) ---------------------------------------------------------------------------------------------------------------
+  // Off by default. When it is switched on it takes the current heading and altitude as its targets and flies them: it steers by banking
+  // and sets the angle of the flight path. While it is on the keys move the targets instead of flying the aircraft: A / D turn the heading
+  // bug, W / S raise and lower the altitude. The throttle stays with the pilot. It switches itself off on the ground, after a crash, when
+  // the vehicle is switched and on a respawn.
+  // It can land the Cessna and the Airbus at the airport (not at a place, and not the jet or the drone).
+  const canLand = () => Boolean(scene && plane && !scene.place && (flightMode === 'plane' || flightMode === 'airbus'));
+  const runwayInfo = () => ({ x: scene.runway.threshold[0], z: scene.runway.threshold[1], heading: scene.runway.heading, length: scene.runway.length, width: scene.runway.width, glide: scene.glide });
+  function setAutopilot(on) {
+    if (on && (!plane || plane.onGround || plane.crashed || state !== 'flying')) on = false;
+    ap = { on, heading: plane ? plane.heading : 0, alt: plane ? Math.max(plane.y, 30) : 0, memo: {}, phase: '', flapAt: 0, km: 0 };
+    $('#autoPilot').checked = on;
+  }
+  function applyAutopilot(input, dt) {
+    if (plane.crashed) { setAutopilot(false); return; }
+    // One button: for the Cessna and the Airbus at an airport the autopilot flies to the runway, lines up, descends on the glide path, flares,
+    // touches down, rolls out and stops. Moving the stick yourself switches it off (as in a real aircraft). Elsewhere it holds heading and altitude.
+    if (canLand()) {
+      if ((input.elevator || input.aileron) && !plane.onGround) { setAutopilot(false); return; }
+      else {
+        const cmd = P.autoland(plane, runwayInfo(), ap.memo);
+        if (!cmd) { setAutopilot(false); return; }
+        if (cmd.done) { plane.brake = true; setAutopilot(false); return; }
+        input.elevator = cmd.elevator; input.aileron = cmd.aileron; input.rudder = cmd.rudder; input.brake = cmd.brake; ap.phase = cmd.phase; ap.km = Math.hypot(cmd.s, cmd.c) / 1000;
+        plane.throttle += Math.max(-0.3 * dt, Math.min(0.3 * dt, cmd.throttle - plane.throttle)); syncThrottle();
+        const now = performance.now(); if (!plane.onGround && (plane.flaps || 0) !== cmd.flaps && now - ap.flapAt > 1500) { setFlaps((plane.flaps || 0) + Math.sign(cmd.flaps - (plane.flaps || 0))); ap.flapAt = now; }
+        if (cmd.phase !== 'NAV' && cmd.s > -4000 && scale > 1) setScale(1);   // the last few kilometres are flown in real time
+        return;
+      }
+    }
+    if (plane.onGround) { setAutopilot(false); return; }
+    const drone = flightMode === 'drone', climbRate = drone ? 6 : { plane: 5, airbus: 12, jet: 40 }[flightMode] || 5;
+    ap.alt = Math.max(30, Math.min(6000, ap.alt + (drone ? input.climb : input.elevator) * climbRate * dt)); ap.heading += (drone ? input.yaw * 0.8 : input.aileron * 0.4) * dt;
+    const command = P.autopilot(plane, ap); if (!command) return;
+    if (drone) { input.climb = command.climb; input.yaw = command.yaw; } else { input.elevator = command.elevator; input.aileron = command.aileron; input.rudder = 0; }
   }
 
   // ---- sharing the plane's position -------------------------------------------------------------------------------------------
@@ -208,7 +267,7 @@
     const b = plane.axes ? { right: plane.axes.r, up: plane.axes.u, forward: plane.axes.f } : basis(plane), p = [plane.x, plane.y + GEAR[flightMode], plane.z];
     if (flightMode === 'drone') {   // the camera gimbal looks along the heading, tilted by the view angle (W / S)
       const view = plane.view ?? 0, look = [Math.cos(view) * Math.sin(plane.heading), Math.sin(view), Math.cos(view) * Math.cos(plane.heading)], flat = [Math.sin(plane.heading), 0, Math.cos(plane.heading)];
-      return { position: cameraMode === 'cockpit' ? [p[0], p[1], p[2]] : [p[0] - flat[0] * 3, p[1] + 1, p[2] - flat[2] * 3], forward: look, up: [0, 1, 0], fov: 1.1, near: 0.3 };   // a real drone is small, so the camera is close
+      return { position: cameraMode === 'cockpit' ? [p[0], p[1], p[2]] : [p[0] - flat[0] * 0.9, p[1] + 0.3, p[2] - flat[2] * 0.9], forward: look, up: [0, 1, 0], fov: 1.1, near: 0.12 };   // a real drone is small, so the camera is close
     }
     if (flightMode === 'jet') {   // fixed to the aircraft: the pilot's view, or an outside view that turns with it; the head can look around
       const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw), cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
@@ -229,7 +288,7 @@
     if (!scene || !plane || state === 'loading') return;
     const dt = Math.min(0.1, (now - last) / 1000 || 0); last = now;
     if (state === 'flying') {
-      const input = pilotInput();
+      const input = pilotInput(); if (ap.on) applyAutopilot(input, dt);
       P.advance(plane, input, dt, world, 0.025, scale); if (input.throttleRate) { syncThrottle(); manualAt.throttle = now; }
       if (plane.crashed) { state = 'crashed'; crashedFor = 0; $('#crashText').textContent = plane.crashed; $('#crash').hidden = false; }
     } else if (state === 'crashed') {
@@ -238,16 +297,27 @@
       if (crashedFor >= 3) recoverHere();
     }
     if (flightMode === 'jet') { const turn = ((held('lookRight') ? 1 : 0) - (held('lookLeft') ? 1 : 0)) * dt * 2, tilt = ((held('lookUp') ? 1 : 0) - (held('lookDown') ? 1 : 0)) * dt * 2; look.yaw = Math.max(-Math.PI, Math.min(Math.PI, look.yaw + turn)); look.pitch = Math.max(-1.5, Math.min(1.5, look.pitch + tilt)); }
-    assistTick(now, dt); spinSelf += dt * (25 + plane.throttle * 110);
+    assistTick(now, dt); spinSelf += dt * (flightMode === 'drone' ? 180 : 25 + plane.throttle * 110);
     sharePosition(now); streamTiles(now);
     const planes = [{ x: plane.x, y: plane.y, z: plane.z, heading: plane.heading, pitch: plane.pitch, roll: plane.roll, body: [0.8, 0.1, 0.12], accent: [0.1, 0.2, 0.45], scale: SIZE[flightMode] || 1, axes: plane.axes, model: flightMode, baseY: GEAR[flightMode], spin: spinSelf }];
     for (const other of others) planes.push({ x: other.x, y: other.y, z: other.z, heading: other.heading, pitch: other.pitch, roll: other.roll, body: hexColor(other.color), accent: [0.1, 0.2, 0.45], scale: SIZE[other.model] || 1, model: other.model || 'plane', baseY: GEAR[other.model] ?? 1.1, spin: spinOf(other, dt) });
     if (cameraMode === 'cockpit') planes.shift();
+    renderer.setDynamicLights(night ? new Float32Array(dynamicLights(planes)) : null);
     const viewProj = renderer.draw(camera(), planes, {});
     drawHud(viewProj); if (now - mapAt > 90) { mapAt = now; drawMap(); }
   }
+  // Lights that move or change every frame: the navigation lights, strobes and beacons of every aircraft in view, and the PAPI.
+  function dynamicLights(planes) {
+    const out = [];
+    for (const entry of planes) {
+      const b = entry.axes ? { right: entry.axes.r, up: entry.axes.u, forward: entry.axes.f } : basis(entry), k = entry.scale || 1, y = entry.y + (entry.baseY ?? 1.1);
+      for (const [p, c, period, offset, duty, size] of FlightModels.navLights(entry.model)) out.push(entry.x + (b.right[0] * p[0] + b.up[0] * p[1] + b.forward[0] * p[2]) * k, y + (b.right[1] * p[0] + b.up[1] * p[1] + b.forward[1] * p[2]) * k, entry.z + (b.right[2] * p[0] + b.up[2] * p[1] + b.forward[2] * p[2]) * k, c[0], c[1], c[2], period, offset, duty, size * (k < 0.5 ? 1 : 1));
+    }
+    if (scene.lightData && scene.lightData.papi.length && plane) for (const v of OSM.papiLights(scene, scene.lightData.papi, [plane.x, plane.y, plane.z], landingNumber(scene))) out.push(v);
+    return out;
+  }
   // Each other pilot's propeller angle, advanced by their throttle.
-  const spins = new Map(); const spinOf = (other, dt) => { const angle = (spins.get(other.id) || 0) + dt * (25 + (other.throttle || 0) * 110); spins.set(other.id, angle); return angle; };
+  const spins = new Map(); const spinOf = (other, dt) => { const angle = (spins.get(other.id) || 0) + dt * (other.model === 'drone' ? 180 : 25 + (other.throttle || 0) * 110); spins.set(other.id, angle); return angle; };
   const hexColor = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
 
   // The runway number being landed on: the one of the pair that matches the approach heading (27 when coming in towards the west).
@@ -289,6 +359,9 @@
     const toThreshold = Math.hypot(plane.x - scene.runway.threshold[0], plane.z - scene.runway.threshold[1]);
     text(scene.place ? scene.label : `${scene.airport.name}`, 14, 74, { size: 18, weight: 700 });
     if (!scene.place) text(`${scene.airport.icao}${scene.airport.iata ? ' / ' + scene.airport.iata : ''}  ·  runway ${landingNumber(scene)}  ·  ${(toThreshold / 1852).toFixed(1)} nm / ${(toThreshold / 1000).toFixed(1)} km`, 14, 98, { size: 14, weight: 600, color: '#dbe5f3' });
+    if (flightMode === 'jet' && plane.mach != null) { text(`G ${(plane.g ?? 1).toFixed(1)}   M ${plane.mach.toFixed(2)}${plane.throttle > 0.75 ? '   AB' : ''}`, 24, h - 164, { color: Math.abs(plane.g ?? 1) > 7 ? '#ff9f6b' : '#dbe5f3', size: 16, weight: 700 }); }
+    if (ap.on && canLand()) text(`AUTOLAND   ${ap.phase || 'NAV'}   ${ap.km.toFixed(1)} km to the runway`, cx, 112, { align: 'center', color: '#9be7a5', size: 16, weight: 800 });
+    else if (ap.on) text(`AUTOPILOT   HDG ${String(Math.round(((ap.heading * 180 / Math.PI) % 360 + 360) % 360) % 360).padStart(3, '0')}°   ALT ${Math.round(ap.alt * 3.28084).toLocaleString()} ft`, cx, 112, { align: 'center', color: '#9be7a5', size: 16, weight: 800 });
     if (MODE_LABEL[flightMode]) text(MODE_LABEL[flightMode], w - 14, 74 + 0, { align: 'right', color: '#ffd23f', size: 18, weight: 800 });
     if (plane.flaps && hasFlaps(flightMode)) text(`FLAPS ${FLAP_TEXT[flightMode][plane.flaps]}`, 14, scale > 1 ? 146 : 122, { color: '#9be7a5', size: 16, weight: 700 });
     if (scale > 1) text(`${scale}× speed`, 14, 122, { color: '#ffd23f', size: 16, weight: 700 });
@@ -322,14 +395,14 @@
       streaming.pending.set(key, true);
       OSM.loadTile(fetchOverpass, scene, world, i, j).then(tile => {
         streaming.pending.delete(key); if (token !== loadingToken) return;
-        world.addTile(tile); const mesh = OSM.tileParts(tile); renderer.setTile(tile.key, mesh.ground, mesh.solid); evictTiles();
+        world.addTile(tile); const mesh = OSM.tileParts(tile); renderer.setTile(tile.key, mesh.ground, mesh.solid); renderer.setLights(tile.key, new Float32Array(OSM.obstructionLights(tile.buildings))); evictTiles();
       }).catch(error => { streaming.pending.delete(key); streaming.failed.set(key, performance.now() + 20000); console.warn('More map could not be read:', error); });
     }
   }
   function evictTiles() {
     const far = tile => Math.hypot((tile.rect[0] + tile.rect[2]) / 2 - plane.x, (tile.rect[1] + tile.rect[3]) / 2 - plane.z);
     const extra = [...world.tiles.values()].filter(tile => tile !== world.home).sort((a, b) => far(b) - far(a));
-    while (extra.length > 30) { const tile = extra.shift(); world.removeTile(tile.key); renderer.removeTile(tile.key); }
+    while (extra.length > 30) { const tile = extra.shift(); world.removeTile(tile.key); renderer.removeTile(tile.key); renderer.removeLights(tile.key); }
   }
 
   // ---- the 2D map in the top right corner ----------------------------------------------------------------------------------
@@ -397,8 +470,11 @@
   function assistTick(now, dt) {
     const panel = $('#assist'), near = nearAirport(), advice = near ? P.advice(plane, { distance: near.distance, height: plane.y, departing: near.departing, glide: scene.glide }) : null;
     assist.advice = advice;
-    if (!advice) { if (!panel.hidden) panel.hidden = true; return; }
-    if (panel.hidden) panel.hidden = false;
+    // The panel is there whenever you are flying: the autopilot checkbox always, the approach advice and the throttle and flap automation
+    // only near an airport (and for the Cessna and the Airbus).
+    const showing = state === 'flying'; if (panel.hidden === showing) panel.hidden = !showing;
+    $('#assistAdvice').hidden = !advice; $('#assistAuto').hidden = !advice; $('#assistTitle').textContent = advice ? 'Approach assist' : 'Assist';
+    if (!advice) { $('#assistPhase').textContent = ''; return; }
     const kt = plane.speed * 1.943844, flapText = FLAP_TEXT[flightMode];
     if (!plane.onGround) {
       if (assist.thr && now - manualAt.throttle > 4000) {
@@ -417,22 +493,26 @@
   }
 
   // ---- start up ---------------------------------------------------------------------------------------------------------------
+  // An airport that does not exist (or cannot be looked up) leads to the default, Hong Kong International, with a message.
+  async function goToFallback(reason) { toast(`${String(reason || '').replace(/\s+$/, '')} Showing Hong Kong International (${OSM.FALLBACK_AIRPORT}) instead.`); $('#results').hidden = true; await openAirport(OSM.FALLBACK_AIRPORT); }
   async function openAirport(code, options = {}) {
     const token = ++loadingToken;
-    const before = state; state = 'loading'; $('#loading').hidden = false; $('#crash').hidden = true; $('#airport').value = code; progress(`Reading OpenStreetMap: ${OSM.AIRPORTS[code] ? OSM.AIRPORTS[code].label : code}…`, 0.05);
+    const before = state; state = 'loading'; $('#loading').hidden = false; $('#crash').hidden = true; $('#airport').value = shownAs(code); progress(`Reading OpenStreetMap: ${OSM.AIRPORTS[code] ? OSM.AIRPORTS[code].label : code}…`, 0.05);
     const { scene: loaded, note, error, kind } = await loadScene(code);
     if (token !== loadingToken) return;
     if (error) {   // an unknown code: stay where we were
+      if (!scene) { goToFallback(error); return; }   // nothing is loaded yet (a bad address or saved code): never leave a blank game
       if (!(kind === 'not-found' && options.notFound)) toast(error); $('#loading').hidden = true;
-      if (scene) { state = before === 'loading' ? 'flying' : before; $('#airport').value = scene.code; focusView(); } else { progress(error, 0); $('#loading').hidden = false; }
+      state = before === 'loading' ? 'flying' : before; $('#airport').value = shownAs(scene.code); focusView();
       if (kind === 'not-found' && options.notFound) options.notFound();
       return;
     }
     scene = loaded; progress('Building the 3D scene…', 0.8); await nextFrame();
     world = OSM.createWorld(scene);
-    const mesh = OSM.meshParts(scene); renderer.clearTiles(); renderer.setScene(mesh.ground, mesh.solid, mesh.base); notice = note; others = []; streaming.pending.clear(); streaming.failed.clear();
+    const mesh = OSM.meshParts(scene); renderer.clearTiles(); renderer.setScene(mesh.ground, mesh.solid, mesh.base);
+    renderer.clearLights(); scene.lightData = OSM.buildLights(scene); renderer.setLights('home', scene.lightData.data); notice = note; others = []; streaming.pending.clear(); streaming.failed.clear();
     window.flightState = () => ({ world, sceneObject: scene, scene: { source: scene.source, code: scene.code, buildings: scene.buildings.length, mode: flightMode, assist: assist.advice, airport: scene.airport, tiles: world.tiles.size, loading: streaming.pending.size, runway: { ref: scene.runway.ref, headingDegrees: scene.runway.heading * 180 / Math.PI, length: scene.runway.length } }, plane, others, state });
-    $('#airport').value = scene.code; $('#airport').title = `${scene.airport.name} (${scene.airport.icao}${scene.airport.iata ? ' / ' + scene.airport.iata : ''}): type another code and press Enter`;
+    $('#airport').value = shownAs(scene.code); $('#airport').title = scene.place ? `${scene.label}: a place to look around. Type an airport code or name and press Enter` : `${scene.airport.name} (${scene.airport.icao}${scene.airport.iata ? ' / ' + scene.airport.iata : ''}): type another code and press Enter`;
     try { localStorage.setItem('flight-airport', scene.code); } catch { /* optional */ }
     renderHelp(); if (flightMode === 'jet') setCamera('cockpit'); respawn(true); $('#loading').hidden = true; $('#reset').disabled = socket?.readyState !== WebSocket.OPEN; focusView();
   }
@@ -440,6 +520,7 @@
     connect();
     try { renderer = new R.Renderer($('#view')); } catch (error) { progress(`${error.message} The flight simulator needs WebGL.`, 0); return; }
     requestAnimationFrame(frame);
+    { let saved = null; try { saved = localStorage.getItem('flight-night'); } catch { /* optional */ } setNight(new URLSearchParams(location.search).get('night') === '1' || saved === '1'); }
     await openAirport(preferred());
   }
   start();

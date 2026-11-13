@@ -52,15 +52,22 @@
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
-  // ---- jet: no stall, no bank or pitch limit -----------------------------------------------------------------------------------
-  // The plane keeps a full orientation (nose f, up u, right r) and the stick sets turn rates, so loops, rolls, inverted flight and
-  // knife edges all work. The velocity is pulled towards the nose (less so when slow), thrust pushes along the nose, gravity and
-  // drag act as usual, and nothing is limited except by the physics of speed.
-  const JET = { thrust: 24, drag: 0.00042, bleed: 10, align: 2.6, pitchRate: 2.2, rollRate: 4.2, yawRate: 0.7, minAlignSpeed: 28 };
+  // ---- jet: a fighter-class aircraft flown with a full orientation ------------------------------------------------------------------
+  // The aircraft keeps nose, up and right vectors, so loops, rolls and inverted flight work, but it flies on real forces: thrust along
+  // the nose (military power up to 75% of the throttle, afterburner above it, both falling with air density), drag (including wave
+  // drag near Mach 1 and an air brake), and lift perpendicular to the flight path from the angle of attack, which stalls past about 23
+  // degrees. The stick is progressive: it ramps in and out, and a flight control computer turns it into an angle of attack between
+  // "hold the flight path" (stick released holds a 1 g path, so the nose does not drop) and the limit of 9 g (or -3 g pushing); the
+  // wing's own stall and the speed decide the rest. Pitch and roll authority fall at low speed, the nose falls through below about
+  // 60 m/s, and turns cost speed. Mass 9.5 t, wing 27.9 m2, thrust 78 kN (130 kN with afterburner).
+  const JETSPEC = { mass: 9500, wing: 27.9, clAlpha: 4.2, alphaStall: 0.40, cd0: 0.022, k: 0.12, brakeCd: 0.05, thrustMil: 78000, thrustAb: 130000, maxG: 9, minG: -3, rollRate: 4.4, yawRate: 0.45 };
+  const JET = JETSPEC;
   const vlen = v => Math.hypot(v[0], v[1], v[2]);
   const vnorm = v => { const l = vlen(v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
   const vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
   const vcomb = (a, x, b, y) => [a[0] * x + b[0] * y, a[1] * x + b[1] * y, a[2] * x + b[2] * y];
+
   // Nose, up and right vectors for a heading, pitch and roll (the same convention the renderer uses).
   function axesFrom(heading, pitch, roll) {
     const sh = Math.sin(heading), ch = Math.cos(heading), sp = Math.sin(pitch), cp = Math.cos(pitch), sr = Math.sin(roll), cr = Math.cos(roll);
@@ -79,26 +86,44 @@
     const along = axesFrom(plane.heading, plane.gamma, 0).f; plane.vel = [along[0] * plane.speed, along[1] * plane.speed, along[2] * plane.speed]; return plane;
   }
   function stepJet(plane, input, dt, world, move = dt) {
-    const ramp = (value, target, rate) => value + clamp(target - value, -rate * dt, rate * dt);
-    plane.elevator = ramp(plane.elevator, clamp(input.elevator || 0, -1, 1), 4);
-    plane.aileron = ramp(plane.aileron, clamp(input.aileron || 0, -1, 1), 6);
-    plane.rudder = ramp(plane.rudder, clamp(input.rudder || 0, -1, 1), 4);
+    const J = JETSPEC, W = J.mass * G;
+    // The sticks ramp in and spring back: a key press is not an instant full deflection.
+    const stick = (value, target, rise, fall) => { const rate = Math.abs(target) > Math.abs(value) ? rise : fall; return value + clamp(target - value, -rate * dt, rate * dt); };
+    plane.elevator = stick(plane.elevator, clamp(input.elevator || 0, -1, 1), 2.2, 3.5);
+    plane.aileron = stick(plane.aileron, clamp(input.aileron || 0, -1, 1), 3.2, 5);
+    plane.rudder = stick(plane.rudder, clamp(input.rudder || 0, -1, 1), 3, 4);
     plane.throttle = clamp(plane.throttle + (input.throttleRate || 0) * dt, 0, 1);
     plane.brake = Boolean(input.brake);
-    const a = plane.axes, pitch = plane.elevator * JET.pitchRate * dt, roll = plane.aileron * JET.rollRate * dt, yaw = plane.rudder * JET.yawRate * dt;
-    // stick back pitches the nose up, stick right drops the right wing, right rudder yaws right
+    const a = plane.axes; let v = plane.vel, speed = vlen(v);
+    const rho = 1.225 * Math.exp(-Math.max(0, plane.y) / 8500), q = 0.5 * rho * speed * speed, qS = Math.max(q * J.wing, 1);
+    const alphaOf = () => Math.atan2(-vdot(v, a.u), vdot(v, a.f)), betaOf = () => Math.atan2(vdot(v, a.r), Math.max(Math.abs(vdot(v, a.f)), 0.01));
+    const alpha = speed > 1 ? alphaOf() : 0, beta = speed > 1 ? betaOf() : 0, gamma = speed > 1 ? Math.asin(clamp(v[1] / speed, -1, 1)) : 0;
+    // The control computer: the angle of attack that holds the flight path (1 g) at this speed, and the limits for 9 g and -3 g.
+    const alphaFor = n => n * W / (qS * J.clAlpha), cap = J.alphaStall * 0.95;
+    const bankFactor = a.u[1] / Math.max(a.u[1] * a.u[1], 0.1225);   // in a banked turn the wing must lift more (1/cos of the bank) to keep the vertical component; inverted it lifts the other way
+    const hold = clamp(alphaFor(Math.max(Math.cos(gamma), 0)) * bankFactor, -0.25, cap), top = Math.min(cap, alphaFor(J.maxG)), bottom = Math.max(-0.25, alphaFor(J.minG));
+    const e = plane.elevator, lowSpeed = clamp((60 - speed) / 40, 0, 1);
+    const command = (e >= 0 ? hold + e * (top - hold) : hold + e * (hold - bottom)) - lowSpeed * 0.9;   // the nose falls through when too slow
+    const authority = clamp(speed / 110, 0.12, 1.2);
+    const pitch = clamp((command - alpha) * Math.min(1, dt * 5 * authority), -3 * dt, 3 * dt), roll = plane.aileron * J.rollRate * authority * dt;
+    const yaw = plane.rudder * J.yawRate * Math.min(1, authority) * dt + (speed > 1 ? clamp(beta, -0.5, 0.5) * Math.min(1, dt * 4 * authority) : 0);   // and the nose follows the airflow sideways
     let c = Math.cos(pitch), s = Math.sin(pitch); [a.f, a.u] = [vcomb(a.f, c, a.u, s), vcomb(a.u, c, a.f, -s)];
     c = Math.cos(roll); s = Math.sin(roll); [a.r, a.u] = [vcomb(a.r, c, a.u, -s), vcomb(a.u, c, a.r, s)];
     c = Math.cos(yaw); s = Math.sin(yaw); [a.f, a.r] = [vcomb(a.f, c, a.r, s), vcomb(a.r, c, a.f, -s)];
     orthonormalize(a);
-    let v = plane.vel, speed = vlen(v);
-    const dir = speed > 0.5 ? vnorm(v) : a.f;
-    const acc = vcomb(vcomb(a.f, plane.throttle * JET.thrust, dir, -(JET.drag * speed * speed + JET.bleed * (1 - vdot(a.f, dir)) * Math.min(1, speed / 60))), 1, [0, -G, 0], 1);
-    v = [v[0] + acc[0] * dt, v[1] + acc[1] * dt, v[2] + acc[2] * dt]; speed = vlen(v);
-    if (speed > 0.5) { const pull = Math.min(1, dt * JET.align * Math.min(1, speed / JET.minAlignSpeed)), toward = vnorm(vcomb(vnorm(v), 1 - pull, a.f, pull)); v = [toward[0] * speed, toward[1] * speed, toward[2] * speed]; }
+    // Forces: thrust along the nose, lift perpendicular to the flight path, drag against it, and gravity.
+    const dir = speed > 1 ? vnorm(v) : a.f, now = speed > 1 ? alphaOf() : 0, stalled = Math.abs(now) > J.alphaStall;
+    const cl = Math.abs(now) <= J.alphaStall ? J.clAlpha * now : Math.abs(now) < 1.2 ? Math.sign(now) * Math.max(0.4, J.clAlpha * J.alphaStall - 1.8 * (Math.abs(now) - J.alphaStall)) : 1.0 * Math.sin(2 * now);
+    const mach = speed / Math.max(295, 340 - 0.004 * plane.y), wave = 0.035 * clamp((mach - 0.9) / 0.35, 0, 1);
+    const cd = J.cd0 + wave + J.k * cl * cl + 0.9 * Math.sin(now) ** 2 + (plane.brake ? J.brakeCd : 0);
+    const lift = qS * cl, drag = qS * cd, t = plane.throttle, base = t <= 0.75 ? J.thrustMil * t / 0.75 : J.thrustMil + (t - 0.75) / 0.25 * (J.thrustAb - J.thrustMil), thrust = base * Math.pow(rho / 1.225, 0.7);
+    let lhat = vcomb(a.u, 1, dir, -vdot(a.u, dir)); lhat = vlen(lhat) > 1e-6 ? vnorm(lhat) : a.u;
+    const force = [a.f[0] * thrust + lhat[0] * lift - dir[0] * drag, a.f[1] * thrust + lhat[1] * lift - dir[1] * drag, a.f[2] * thrust + lhat[2] * lift - dir[2] * drag];
+    v = [v[0] + force[0] / J.mass * dt, v[1] + (force[1] / J.mass - G) * dt, v[2] + force[2] / J.mass * dt]; speed = Math.min(700, vlen(v)); if (speed >= 700) v = mul(vnorm(v), 700);
+    plane.g = vdot(force, a.u) / W;
     plane.vel = v; plane.speed = speed; plane.x += v[0] * move; plane.y += v[1] * move; plane.z += v[2] * move; plane.verticalSpeed = v[1];
     plane.gamma = speed > 0.5 ? Math.asin(clamp(v[1] / speed, -1, 1)) : 0;
-    Object.assign(plane, anglesOf(a)); plane.aoa = Math.acos(clamp(vdot(a.f, speed > 0.5 ? vnorm(v) : a.f), -1, 1)); plane.stalled = false;
+    Object.assign(plane, anglesOf(a)); plane.aoa = now; plane.stalled = stalled; plane.mach = mach;
     return jetContact(plane, world);
   }
   // A jet crashes into buildings, the water and the ground, unless it comes down gently and level, when it rolls on its wheels.
@@ -244,7 +269,7 @@
       return plane;
     }
     if (plane.mode === 'drone') {            // a drone has no flying speed: give the new vehicle some, and a little height
-      Object.assign(plane, { mode, axes: null, vel: null, speed: mode === 'jet' ? 80 : mode === 'airbus' ? 85 : 45, y: Math.max(plane.y, 25), gamma: 0, pitch: 0.05, roll: 0, throttle: Math.max(plane.throttle, 0.5), onGround: false, elevator: 0, aileron: 0, rudder: 0, flaps: 0 });
+      Object.assign(plane, { mode, axes: null, vel: null, speed: mode === 'jet' ? 110 : mode === 'airbus' ? 85 : 45, y: Math.max(plane.y, 25), gamma: 0, pitch: 0.05, roll: 0, throttle: Math.max(plane.throttle, 0.5), onGround: false, elevator: 0, aileron: 0, rudder: 0, flaps: 0 });
       return mode === 'jet' ? startJet(plane) : plane;
     }
     if (mode === 'jet') { plane.mode = 'jet'; return flying ? startJet(plane) : plane; }
@@ -260,9 +285,85 @@
   // After a crash: the same vehicle, in the same place and heading but at `altitude` metres, flying level at a safe speed.
   function recover(plane, altitude = 300) {
     const mode = plane.mode, heading = plane.heading;
-    Object.assign(plane, { crashed: null, onGround: false, stalled: false, y: altitude, gamma: 0, pitch: 0.05, roll: 0, speed: mode === 'jet' ? 80 : mode === 'drone' ? 0 : mode === 'airbus' ? 95 : 45, throttle: mode === 'jet' ? 0.4 : mode === 'drone' ? 0 : mode === 'airbus' ? 0.5 : 0.55, flaps: 0, elevator: 0, aileron: 0, rudder: 0, brake: false, verticalSpeed: 0, axes: null, vel: null, heading });
+    Object.assign(plane, { crashed: null, onGround: false, stalled: false, y: altitude, gamma: 0, pitch: 0.05, roll: 0, speed: mode === 'jet' ? 110 : mode === 'drone' ? 0 : mode === 'airbus' ? 95 : 45, throttle: mode === 'jet' ? 0.5 : mode === 'drone' ? 0 : mode === 'airbus' ? 0.5 : 0.55, flaps: 0, elevator: 0, aileron: 0, rudder: 0, brake: false, verticalSpeed: 0, axes: null, vel: null, heading });
     if (mode === 'drone') Object.assign(plane, { vf: 0, vs: 0, vz: 0, pitch: 0, view: -0.15 });
     return mode === 'jet' ? startJet(plane) : plane;
+  }
+
+  // ---- autopilot -------------------------------------------------------------------------------------------------------------------
+  // Holds a heading and an altitude. It steers by banking towards the heading (a gentle bank for the Cessna and the Airbus, a steeper one for
+  // the jet) and adjusts the angle of the flight path: the climb or descent rate is proportional to the altitude error and limited, and the
+  // stick is the one that holds that path, worked out from the aircraft's own lift (the same maths as the landing advice) plus feedback. The
+  // throttle is not touched. `target` is { heading (radians), alt (metres) }. Returns the stick (or, for the drone, climb and yaw) or null.
+  const wrapAngle = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+  const AUTOPILOT = { plane: { maxBank: 0.45, climb: 3.5, descent: 4 }, airbus: { maxBank: 0.4, climb: 9, descent: 8 }, jet: { maxBank: 1.0, climb: 30, descent: 15 } };
+  function autopilot(plane, target) {
+    if (plane.crashed || plane.onGround) return null;
+    const headingError = wrapAngle(target.heading - plane.heading);
+    if (plane.mode === 'drone') return { climb: clamp((target.alt - plane.y) * 0.5, -1, 1), yaw: clamp(headingError * 1.6, -1, 1) };
+    const mode = plane.mode, limits = AUTOPILOT[mode] || AUTOPILOT.plane, speed = Math.max(plane.speed, 20), bank = clamp(headingError * 2.2, -(target.maxBank ?? limits.maxBank), target.maxBank ?? limits.maxBank);
+    const climbRate = clamp((target.alt - plane.y) * 0.08, -limits.descent, limits.climb), gammaTarget = target.gamma ?? Math.asin(clamp(climbRate / speed, -0.5, 0.5)), gamma = plane.gamma || 0;   // `gamma`: fly this path angle instead of an altitude
+    if (mode === 'jet') {
+      const need = Math.cos(gamma) + 1.2 * (gammaTarget - gamma) * speed / G;                          // the load factor that bends the path towards the target
+      const base = Math.cos(gamma), elevator = need >= base ? (need - base) / (JETSPEC.maxG - base) : (need - base) / (base - JETSPEC.minG);
+      return { elevator: clamp(elevator, -1, 1), aileron: clamp((bank - plane.roll) * 3, -1, 1) };
+    }
+    const S = SPECS[mode] || PLANE, q = 0.5 * S.rho * speed * speed, cl0 = S.cl0 + clamp(plane.flaps || 0, 0, S.maxFlaps) * S.flapCl;
+    const cl = S.mass * G * Math.cos(gamma) / (Math.max(q * S.wingArea, 1) * Math.max(Math.cos(bank), 0.5)), alphaNeeded = (cl - cl0) / S.clAlpha;
+    const elevator = (alphaNeeded - S.trimAlpha) / S.elevatorRange + 4 * (gammaTarget - gamma), top = (S.stallAlpha * 0.85 - S.trimAlpha) / S.elevatorRange;
+    return { elevator: clamp(elevator, -1, Math.min(1, top)), aileron: clamp(bank / S.maxBank, -1, 1) };
+  }
+
+  // ---- auto land -------------------------------------------------------------------------------------------------------------------
+  // Flies the aircraft to a runway and lands it. `runway` is { x, z (the landing threshold), heading (the landing direction), length, width,
+  // glide (degrees) }. In the runway's own axes (s along the landing direction from the threshold, c to the right of the centreline):
+  //   NAV      not lined up: fly to a point on the extended centreline 6.5 km (9 km for the Airbus and the jet) before the threshold, at the
+  //            height of the glide path there, with the landing schedule's flaps and speed;
+  //   FINAL    lined up (inside a funnel round the centreline, pointing roughly the right way): track the centreline with a heading that
+  //            corrects the cross-track error, and fly the glide path with a flight path angle that corrects the height error;
+  //   FLARE    in the last few metres: sink at a rate that falls with height so it touches down softly, throttle idle;
+  //   ROLLOUT  on the ground: steer along the centreline with the rudder, throttle idle, brakes, until it has almost stopped (done).
+  // A long landing or an overshoot (past the threshold and still high) turns into NAV again, which is a go-around. It returns the stick,
+  // rudder, the throttle and flap setting to go to, the brake and the phase, or null when there is nothing to do.
+  function autoland(plane, runway, state = {}) {
+    if (plane.crashed || plane.mode === 'drone' || plane.mode === 'jet') return null;   // the Cessna and the Airbus land themselves
+    const mode = plane.mode, h = runway.heading, d = [Math.sin(h), Math.cos(h)], r = [Math.cos(h), -Math.sin(h)], dx = plane.x - runway.x, dz = plane.z - runway.z;
+    const s = dx * d[0] + dz * d[1], c = dx * r[0] + dz * r[1], g = runway.glide * Math.PI / 180, height = plane.y, speed = Math.max(plane.speed, 1), kt = speed * KNOTS;
+    const slopeAlt = along => 15 + Math.tan(g) * Math.max(0, -along);
+    if (plane.onGround) {
+      return { phase: 'ROLLOUT', elevator: 0, aileron: 0, rudder: clamp(2.2 * wrapAngle(h - plane.heading) - 0.02 * c, -1, 1), throttle: 0, flaps: 0, brake: true, done: plane.speed < 2.5, s, c };
+    }
+    const distance = Math.hypot(s, c), jet = mode === 'jet', join = jet || mode === 'airbus' ? 9000 : 6500, flareAt = mode === 'airbus' ? 14 : jet ? 11 : 9;
+    // Once lined up it stays lined up unless it is well outside the funnel (no flip-flopping at the edge).
+    const funnel = (state.phase === 'FINAL' ? 1.8 : 1) * (0.12 * Math.max(0, -s) + 120), lined = Math.abs(c) < funnel && s < -150 && s > -12000 && Math.abs(wrapAngle(plane.heading - h)) < (state.phase === 'FINAL' ? 1.4 : 1.0) && Math.abs(height - slopeAlt(s)) < (state.phase === 'FINAL' ? 260 : 120 + 0.02 * Math.max(0, -s));   // and near the glide path
+    let phase, target;
+    if (lined || (s >= -150 && s < runway.length * 0.6 && Math.abs(c) < runway.width && height < 80)) {
+      const lateral = clamp(-c / Math.max(400, -s * 0.5), -0.5, 0.5), error = slopeAlt(s) - height;
+      phase = 'FINAL'; target = { maxBank: 0.5, heading: h + (s < -150 ? lateral : clamp(-c * 0.01, -0.1, 0.1)), alt: height, gamma: -g + clamp(error * 0.005, -0.07, 0.07) };
+      if (height < flareAt && s > -600) { phase = 'FLARE'; target.gamma = -Math.max(0.3, 0.14 * height) / speed; }
+    } else if (state.nav === 'intercept' ? s < -1500 : s < -3000) {
+      state.nav = 'intercept';
+      // On the approach side but not lined up: intercept the extended centreline at an angle that shrinks as the error does.
+      phase = 'NAV'; target = { heading: h + clamp(-c / 2500, -1.0, 1.0), alt: slopeAlt(Math.min(-s, join)) + 60, maxBank: jet ? 0.6 : undefined };
+    } else {
+      // Beside, over or past the runway: fly out to a point on the extended centreline, then turn in.
+      phase = 'NAV'; state.nav = 'join';
+      const jx = runway.x - d[0] * join, jz = runway.z - d[1] * join;
+      target = { heading: Math.atan2(jx - plane.x, jz - plane.z), alt: slopeAlt(-join) + 60, maxBank: jet ? 0.6 : undefined };
+    }
+    state.phase = phase;
+    const control = autopilot(plane, target) || { elevator: 0, aileron: 0 };
+    let flaps = 0, throttle, targetKt;
+    if (jet) { targetKt = distance > 12000 ? 300 : distance > 7000 ? 230 : distance > 3500 ? 190 : 170; throttle = clamp(0.3 + 0.012 * (targetKt - kt), 0, 0.75); }
+    else { const advice = PHASES[mode] ? advicePhase(mode, distance, runway.glide) : null; flaps = advice.flaps; targetKt = advice.kt; throttle = clamp(advice.throttle + 0.012 * (advice.kt - kt), 0, 1); }
+    if (phase === 'FLARE' || (height < 12 && s > -300)) throttle = 0;
+    return { phase, elevator: control.elevator, aileron: control.aileron, rudder: 0, throttle, flaps, brake: false, done: false, kt: targetKt, s, c };
+  }
+  // The landing schedule at a distance from the runway: flaps, speed and the throttle that holds the speed on the path.
+  function advicePhase(mode, distance, glide) {
+    const S = SPECS[mode] || PLANE; let phase = PHASES[mode][0]; for (const candidate of PHASES[mode]) if (distance <= candidate.upTo) phase = candidate;
+    const path = phase.glide <= -3 ? -glide : phase.glide;
+    return { flaps: Math.min(phase.flaps, S.maxFlaps), kt: phase.kt, throttle: throttleFor(mode, phase.kt / KNOTS, Math.min(phase.flaps, S.maxFlaps), path) };
   }
 
   // ---- landing advice -------------------------------------------------------------------------------------------------------------
@@ -299,10 +400,10 @@
   // Start for each mode on the same final approach: a Cessna, a jet (faster, no limits) or a drone hovering over the approach path.
   function spawn(mode, options) {
     const plane = approach({ ...options, mode: mode === 'airbus' ? 'airbus' : 'plane' });
-    if (mode === 'jet') { plane.speed = 75; plane.throttle = 0.35; plane.pitch = plane.gamma + 0.05; return startJet(plane); }
+    if (mode === 'jet') { plane.speed = 100; plane.throttle = 0.5; plane.pitch = plane.gamma + 0.05; return startJet(plane); }
     if (mode === 'drone') { Object.assign(plane, { mode: 'drone', speed: 0, throttle: 0, y: 80, gamma: 0, pitch: 0, roll: 0, view: -0.15, vf: 0, vs: 0, vz: 0 }); plane.x = options.x - Math.sin(options.heading) * 600; plane.z = options.z - Math.cos(options.heading) * 600; }
     return plane;
   }
 
-  return { advice, throttleFor, PHASES, PLANE, AIRBUS, SPECS, SAFE, JET, DRONE, G, create, approach, spawn, switchMode, recover, startJet, axesFrom, anglesOf, step, advance, contact, readout, clamp };
+  return { autoland, autopilot, wrapAngle, AUTOPILOT, advice, throttleFor, PHASES, PLANE, AIRBUS, SPECS, SAFE, JET, DRONE, G, create, approach, spawn, switchMode, recover, startJet, axesFrom, anglesOf, step, advance, contact, readout, clamp };
 });

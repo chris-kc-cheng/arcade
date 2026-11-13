@@ -20,14 +20,17 @@
   // read as open water). Victoria Harbour is a place to look around, not an airport: the flight starts over the sea west of Hong Kong
   // Island, heading east into the harbour, so it has no runway (just a placeholder at its centre).
   AIRPORTS.EGLC = { icao: 'EGLC', label: 'London City', runways: ['09/27'], from: 'east', distance: 4600, glide: 5.5, around: 1800, water: 'none', maxBuildings: 30000, region: { south: -0.03, north: 0.03, west: -0.06, east: 0.09 } };
-  AIRPORTS.VHHV = { icao: 'VHHV', label: 'Hong Kong Victoria Harbour', place: { lat: 22.2925, lon: 114.168 }, start: { lat: 22.2862, lon: 114.092, heading: 78, alt: 420 }, runways: [], from: 'west', distance: 0, around: 0, water: 'coastline', maxBuildings: 30000, region: { south: -0.045, north: 0.05, west: -0.1, east: 0.06 } };
+  AIRPORTS.VICTORIA = { icao: 'VICTORIA', label: 'Hong Kong Victoria Harbour', place: { lat: 22.2925, lon: 114.168 }, start: { lat: 22.2862, lon: 114.092, heading: 78, alt: 420 }, runways: [], from: 'west', distance: 0, around: 0, water: 'coastline', maxBuildings: 30000, region: { south: -0.045, north: 0.05, west: -0.1, east: 0.06 } };
   const DEFAULT_AIRPORT = 'CYTZ';
+  const FALLBACK_AIRPORT = 'VHHH';   // where an airport code that does not exist sends you, so a bad code never breaks the game
   // Any airport can be flown into by typing its ICAO (4 character) or IATA (3 character) code: OpenStreetMap is asked for the aerodrome
   // with that tag, the longest runway is used, and it is approached from the end that points into the usual wind (westerlies outside the
   // tropics, so landing towards the west; easterly trade winds within 30 degrees of the equator, so landing towards the east).
   const ALIASES = { YTZ: 'CYTZ', HKG: 'VHHH', HND: 'RJTT', LCY: 'EGLC' };
   const SUGGESTIONS = [['KJFK', 'New York John F. Kennedy'], ['KLAX', 'Los Angeles'], ['KSFO', 'San Francisco'], ['EGLL', 'London Heathrow'], ['LFPG', 'Paris Charles de Gaulle'], ['EDDF', 'Frankfurt'], ['OMDB', 'Dubai'], ['WSSS', 'Singapore Changi'], ['YSSY', 'Sydney'], ['RKSI', 'Seoul Incheon'], ['ZBAA', 'Beijing Capital'], ['LSZH', 'Zurich']];
-  const resolveCode = input => { const code = String(input || '').trim().toUpperCase(); return /^[A-Z0-9]{3,4}$/.test(code) ? (ALIASES[code] || code) : ''; };
+  // A place is not an airport and has no code: it is found by its name (these words), and its key is only used inside the program.
+  const PLACE_NAMES = { 'VICTORIA HARBOUR': 'VICTORIA', 'VICTORIA HARBOR': 'VICTORIA', 'HONG KONG VICTORIA HARBOUR': 'VICTORIA', 'HONG KONG VICTORIA HARBOR': 'VICTORIA', VICTORIA: 'VICTORIA' };
+  const resolveCode = input => { const code = String(input || '').trim().toUpperCase().replace(/\s+/g, ' '); return PLACE_NAMES[code] || (/^[A-Z0-9]{3,4}$/.test(code) ? (ALIASES[code] || code) : ''); };
   // Searching by name uses Nominatim, OpenStreetMap's own search service, which returns aerodromes with their ICAO / IATA tags
   // (`extratags`). Only aerodromes that have a code are offered, because the airport is then opened through the same code lookup.
   const searchUrl = text => { const q = /airport|aerodrome|airfield|airstrip/i.test(text) ? text : `${text} airport`; return `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q, format: 'jsonv2', limit: '20', extratags: '1', addressdetails: '1', 'accept-language': 'en' })}`; };
@@ -54,11 +57,53 @@
     const byId = new Map(((json && json.elements) || []).map(e => [`${e.type}/${e.id}`, e.tags || {}]));
     return list.map(r => { if (r.code) return r; const tags = byId.get(`${r.osmType}/${r.osmId}`) || {}; return { ...r, ...codesOf(tags), name: tags['name:en'] || tags.name || r.name }; }).filter(r => r.code);
   }
+  // Searching by city or region as well: "Osaka" finds Kansai (KIX), Itami (ITM) and Kobe (UKB), although none of them has "Osaka" in its
+  // name. The text is geocoded as a place (Nominatim), then Overpass is asked for aerodromes that have an IATA code within 70 km of the
+  // place and for any whose name, English name or alternative names contain the text.
+  const cleanText = text => String(text || '').replace(/[^\p{L}\p{N} '\-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const searchPlaceUrl = text => `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q: cleanText(text), format: 'jsonv2', limit: '8', 'accept-language': 'en' })}`;
+  function parsePlaces(results) {
+    const places = [];
+    for (const r of Array.isArray(results) ? results : []) {
+      const lat = Number(r.lat), lon = Number(r.lon); if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (!['place', 'boundary'].includes(r.category || r.class)) continue;
+      if (places.some(p => Math.hypot(p.lat - lat, p.lon - lon) < 0.3)) continue;
+      places.push({ name: r.name || (r.display_name || '').split(',')[0], lat, lon });
+      if (places.length === 2) break;
+    }
+    return places;
+  }
+  const NEAR = 70000;
+  function airportsQuery(text, places = []) {
+    const word = cleanText(text), around = places.map(p => `nwr["aeroway"="aerodrome"]["iata"](around:${NEAR},${p.lat.toFixed(4)},${p.lon.toFixed(4)});`).join('');
+    const names = word.length >= 3 ? ['name', 'name:en', 'alt_name', 'int_name'].map(tag => `nwr["aeroway"="aerodrome"]["iata"]["${tag}"~"${word}",i];`).join('') : '';
+    return (around || names) ? `[out:json][timeout:25];(${around}${names});out tags center;` : '';
+  }
+  const kmBetween = (a, b) => { const k = Math.PI / 180 * 6371, x = (a.lon - b.lon) * k * Math.cos(a.lat * Math.PI / 180), y = (a.lat - b.lat) * k; return Math.hypot(x, y); };
+  // Airports from the Overpass answer: those whose names match the text come first, then the ones near a place, nearest first.
+  function parseAirportElements(json, places, text) {
+    const word = cleanText(text).toLowerCase(), out = [];
+    for (const e of (json && json.elements) || []) {
+      const tags = e.tags || {}, codes = codesOf(tags); if (!codes.code) continue;
+      const centre = e.center || (Number.isFinite(e.lat) ? { lat: e.lat, lon: e.lon } : null);
+      const names = ['name', 'name:en', 'alt_name', 'int_name'].map(t => String(tags[t] || '').toLowerCase()), matched = Boolean(word) && names.some(n => n.includes(word));
+      let near = null; if (centre) for (const p of places) { const km = kmBetween(centre, p); if (!near || km < near.km) near = { name: p.name, km }; }
+      const city = tags['addr:city'] || tags['is_in:city'] || '';
+      out.push({ ...codes, name: tags['name:en'] || tags.name || codes.code, where: [city, near ? `${Math.round(near.km)} km from ${near.name}` : ''].filter(Boolean).join(' · '), matched, km: near ? near.km : Infinity, osmType: e.type, osmId: e.id });
+    }
+    return out;
+  }
+  // One list: name matches first (searched names, then Overpass), then nearby airports by distance; one entry per code.
+  function mergeSearch(...lists) {
+    const all = lists.flat(), seen = new Set(), keep = [];
+    for (const r of all.sort((a, b) => (b.matched ? 1 : 0) - (a.matched ? 1 : 0) || (a.km ?? Infinity) - (b.km ?? Infinity))) { if (seen.has(r.code)) continue; seen.add(r.code); keep.push(r); }
+    return keep.slice(0, 14);
+  }
   const dynamicConfig = code => ({ icao: code, label: code, runways: [], from: 'heading', landHeading: 270, distance: 5200, glide: 3, around: 3500, water: 'coastline', maxBuildings: 30000, dynamic: true, region: { south: -0.035, north: 0.035, west: -0.06, east: 0.06 } });
   const config = code => AIRPORTS[code] || AIRPORTS[DEFAULT_AIRPORT];
 
   // ---- queries ------------------------------------------------------------------------------------------------------------
-  const airportQuery = (code = DEFAULT_AIRPORT) => { const known = AIRPORTS[code], id = known ? known.icao : code, key = id.length === 3 ? 'iata' : 'icao', around = known ? known.around : 3500; return `[out:json][timeout:60];nwr["${key}"="${id}"]->.airport;(.airport;way["aeroway"~"^(runway|taxiway|apron)$"](around.airport:${around}););out tags geom;`; };
+  const airportQuery = (code = DEFAULT_AIRPORT) => { const known = AIRPORTS[code], id = known ? known.icao : code, key = id.length === 3 ? 'iata' : 'icao', around = known ? known.around : 3500; return `[out:json][timeout:60];nwr["${key}"="${id}"]->.airport;(.airport;way["aeroway"~"^(runway|taxiway|apron)$"](around.airport:${around});node["aeroway"="navigationaid"](around.airport:${Math.max(around, 5000)}););out tags geom;`; };
   const bounds = (origin, region) => ({ south: origin.lat + region.south, west: origin.lon + region.west, north: origin.lat + region.north, east: origin.lon + region.east });
   const box = (origin, region) => { const b = bounds(origin, region); return `${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}`; };
   const buildingsQuery = (origin, region) => `[out:json][timeout:120];way["building"](${box(origin, region)});out tags geom;`;
@@ -108,12 +153,13 @@
     const elements = json.elements || [], icao = config(code).icao, aerodrome = elements.find(e => e.tags && (e.tags.icao === icao || e.tags.iata === icao) && (e.tags.aeroway === 'aerodrome' || e.tags.name || e.tags.icao || e.tags.iata));
     const ways = kind => elements.filter(e => e.type === 'way' && e.tags && e.tags.aeroway === kind && e.geometry);
     const byRef = new Map();
-    for (const e of ways('runway')) { const ref = e.tags.ref || `way${e.id}`; if (!byRef.has(ref)) byRef.set(ref, { ref, width: Number(e.tags.width) || 0, chains: [] }); const entry = byRef.get(ref); entry.width = entry.width || Number(e.tags.width) || 0; entry.chains.push(points(e.geometry)); }
-    const runways = [...byRef.values()].map(r => ({ ref: r.ref, width: r.width || 45, nodes: joinChains(r.chains.filter(c => c.length >= 2)).sort((a, b) => b.length - a.length)[0] })).filter(r => r.nodes && r.nodes.length >= 2);
+    for (const e of ways('runway')) { const ref = e.tags.ref || `way${e.id}`; if (!byRef.has(ref)) byRef.set(ref, { ref, width: Number(e.tags.width) || 0, chains: [], lit: '' }); const entry = byRef.get(ref); entry.lit = entry.lit || e.tags.lit || ''; entry.width = entry.width || Number(e.tags.width) || 0; entry.chains.push(points(e.geometry)); }
+    const runways = [...byRef.values()].map(r => ({ ref: r.ref, width: r.width || 45, lit: r.lit, nodes: joinChains(r.chains.filter(c => c.length >= 2)).sort((a, b) => b.length - a.length)[0] })).filter(r => r.nodes && r.nodes.length >= 2);
     if (!aerodrome || !runways.length) { const error = new Error(`No runway for ${icao} in the OpenStreetMap answer`); error.code = 'not-found'; throw error; }
     return {
       icao: aerodrome.tags.icao || icao, iata: aerodrome.tags.iata || '', name: aerodrome.tags['name:en'] || aerodrome.tags.name || icao, elevation: parseFloat(aerodrome.tags.ele) || 0, osmId: `${aerodrome.type}/${aerodrome.id}`, runways,
-      taxiways: ways('taxiway').map(e => ({ id: e.id, nodes: points(e.geometry) })).filter(t => t.nodes.length >= 2),
+      taxiways: ways('taxiway').map(e => ({ id: e.id, lit: e.tags.lit || '', nodes: points(e.geometry) })).filter(t => t.nodes.length >= 2),
+      navaids: elements.filter(e => e.type === 'node' && e.tags && e.tags.aeroway === 'navigationaid' && Number.isFinite(e.lat)).map(e => ({ kind: String(e.tags.navigationaid || ''), lat: e.lat, lon: e.lon, tags: e.tags })),
       aprons: ways('apron').map(e => ({ id: e.id, nodes: points(e.geometry) })).filter(a => a.nodes.length >= 4)
     };
   }
@@ -296,9 +342,10 @@
     return {
       place, glide: options.glide || 3, start: place ? { x: at[0], z: at[1], heading: options.start.heading * Math.PI / 180, alt: options.start.alt } : null,
       source, region: scene_region, code: options.icao, label: options.label, distance: options.distance, origin, toLocal, toGeo, airport: { icao: airport.icao, iata: airport.iata || '', name: airport.name, elevation: airport.elevation, osmId: airport.osmId },
-      runway: { ref: runway.ref, width: runway.width, points: runwayPoints, threshold, far, heading: bearing(threshold, far), length: Math.hypot(far[0] - threshold[0], far[1] - threshold[1]) },
-      otherRunways: airport.runways.filter(r => r !== runway).map(r => ({ ref: r.ref, width: r.width, points: line(r.nodes) })),
-      taxiways: airport.taxiways.map(t => line(t.nodes)), aprons: airport.aprons.map(a => line(a.nodes)),
+      navaids: (airport.navaids || []).map(n => { const [x, z] = toLocal(n.lat, n.lon); return { kind: n.kind, tags: n.tags, x, z }; }),
+      runway: { ref: runway.ref, width: runway.width, lit: runway.lit, points: runwayPoints, threshold, far, heading: bearing(threshold, far), length: Math.hypot(far[0] - threshold[0], far[1] - threshold[1]) },
+      otherRunways: airport.runways.filter(r => r !== runway).map(r => ({ ref: r.ref, width: r.width, lit: r.lit, points: line(r.nodes) })),
+      taxiways: airport.taxiways.map(t => line(t.nodes)), taxiLit: airport.taxiways.map(t => t.lit), aprons: airport.aprons.map(a => line(a.nodes)),
       buildings: buildings || [], water: water || null, ponds: ponds || [], rect: [sw[0], sw[1], ne[0], ne[1]], tileGrid: { south: scene_region.south, west: scene_region.west }
     };
   }
@@ -443,7 +490,7 @@
     VHHH: { name: 'Hong Kong International Airport', ele: 9, osm: 'relation/16105017', runways: [
       ['07R/25L', 60, [[[22.296234, 113.897974], [22.296273, 113.898094], [22.296558, 113.899015], [22.296702, 113.899423]], [[22.296702, 113.899423], [22.296755, 113.899588], [22.29766, 113.902396], [22.299294, 113.907462], [22.301239, 113.913495], [22.302845, 113.918475], [22.304866, 113.924742], [22.306556, 113.929986], [22.307469, 113.932816]]]]] },
     EGLC: { name: 'London City Airport', ele: 6, osm: 'way/121158889', runways: [['09/27', 30, [[[51.505524, 0.045733], [51.504921, 0.064982]]]]] },
-    VHHV: { name: 'Hong Kong Victoria Harbour', ele: 0, osm: 'place', runways: [['-', 0, [[[22.2925, 114.168], [22.2925, 114.16801]]]]] },
+    VICTORIA: { name: 'Hong Kong Victoria Harbour', ele: 0, osm: 'place', runways: [['-', 0, [[[22.2925, 114.168], [22.2925, 114.16801]]]]] },
     RJTT: { name: 'Tokyo International Airport (Haneda)', ele: 6, osm: 'relation/17864987', runways: [
       ['16L/34R', 60, [[[35.565866, 139.786559], [35.563502, 139.788242], [35.562858, 139.7887]], [[35.562858, 139.7887], [35.560267, 139.790539], [35.555161, 139.794165], [35.548785, 139.798681], [35.544953, 139.8014], [35.542511, 139.803143]], [[35.539712, 139.805119], [35.540219, 139.804759], [35.542511, 139.803143]]]]] }
   };
@@ -468,6 +515,79 @@
     // A place is all sea in the sketch; London City has no sea.
     const water = options.water === 'none' ? null : options.place ? { polygon: rectangle(rect), islands: [] } : { polygon: rectangle(rect), islands: mainland ? [mainland, land] : [land] };
     return buildScene({ airport, buildings, water, region }, 'snapshot', options.icao);
+  }
+
+  // ---- lights at night ------------------------------------------------------------------------------------------------------------
+  // Lights come from what OpenStreetMap records (`aeroway=navigationaid`: approach lights `als`, runway edge `rwe`, centreline `rwc`,
+  // threshold `rwt`, touchdown zone `tdz`, taxiway centre `txc` and edge `txe`, `beacon`, and the PAPI / VASI slope indicators) with
+  // the colour in `light:colour`. What it does not list is not invented, except the basic runway lights, which every lit runway has
+  // (edge lights, green thresholds, red ends, and a centreline on long runways) unless it is tagged `lit=no`; taxiway lights are only
+  // drawn when the taxiway is tagged `lit=yes`. Approach lights on the main runway's centreline flash in sequence towards the runway.
+  // Each light is 10 floats: x, y, z, r, g, b, blink period, offset, duty, size in metres.
+  const LIGHT = { white: [1, 0.95, 0.82], green: [0.2, 1, 0.4], red: [1, 0.12, 0.08], blue: [0.25, 0.4, 1], amber: [1, 0.7, 0.15] };
+  const lightColour = (name, fallback) => ({ white: LIGHT.white, green: LIGHT.green, red: LIGHT.red, blue: LIGHT.blue, yellow: LIGHT.amber, orange: LIGHT.amber, amber: LIGHT.amber }[String(name || '').toLowerCase()] || fallback);
+  const NAV_STYLE = { als: [LIGHT.white, 0.9], rwe: [LIGHT.white, 0.7], rwc: [LIGHT.white, 0.5], rwt: [LIGHT.green, 1.0], tdz: [LIGHT.white, 0.6], txc: [LIGHT.green, 0.45], txe: [LIGHT.blue, 0.5] };
+  const pushLight = (out, x, y, z, c, size = 0.8, period = 0, offset = 0, duty = 1) => out.push(x, y, z, c[0], c[1], c[2], period, offset, duty, size);
+  // Points every `spacing` metres along a polyline, `side` metres to the right of the direction of travel.
+  function along(points, spacing, side = 0) {
+    const out = []; let carry = 0;
+    for (let i = 0; i + 1 < points.length; i++) {
+      const [x1, z1] = points[i], [x2, z2] = points[i + 1], length = Math.hypot(x2 - x1, z2 - z1); if (!length) continue;
+      const dx = (x2 - x1) / length, dz = (z2 - z1) / length;
+      for (let s = carry; s <= length; s += spacing) { out.push([x1 + dx * s + dz * side, z1 + dz * s - dx * side, s, i]); carry = s + spacing - length; }
+      if (carry > spacing) carry = 0;
+    }
+    return out;
+  }
+  // Red lights that blink on top of tall buildings (aircraft warning lights).
+  function obstructionLights(buildings, out = []) {
+    const tall = buildings.filter(b => b.height >= 100).sort((a, b) => b.height - a.height).slice(0, 400);
+    for (const b of tall) { let x = 0, z = 0; for (let i = 0; i < b.ring.length; i += 2) { x += b.ring[i]; z += b.ring[i + 1]; } const n = b.ring.length / 2; pushLight(out, x / n, b.height + 2, z / n, LIGHT.red, 2.2, 2, (hash(b.id) % 200) / 100, 0.4); }
+    return out;
+  }
+  function buildLights(scene) {
+    const out = [], navaids = scene.navaids || [], has = kind => navaids.some(n => n.kind === kind), main = scene.runway;
+    const dx = Math.sin(main.heading), dz = Math.cos(main.heading), ends = [{ at: main.threshold, out: [-dx, -dz] }, { at: main.far, out: [dx, dz] }];
+    for (const n of navaids) {
+      if (n.kind === 'papi' || n.kind === 'vasi') continue;                        // these change with the plane's height: drawn by the page
+      if (n.kind === 'beacon') { pushLight(out, n.x, 18, n.z, LIGHT.white, 3, 4, 0, 0.14); pushLight(out, n.x, 18, n.z, LIGHT.green, 3, 4, 2, 0.14); continue; }
+      const style = NAV_STYLE[n.kind]; if (!style) continue;
+      const colour = lightColour(n.tags && n.tags['light:colour'], style[0]);
+      let period = 0, offset = 0, duty = 1;
+      if (n.kind === 'als') for (const end of ends) {                               // the flashing "rabbit": the centreline lights beyond 150 m
+        const rx = n.x - end.at[0], rz = n.z - end.at[1], distance = rx * end.out[0] + rz * end.out[1], lateral = Math.abs(rx * end.out[1] - rz * end.out[0]);
+        if (distance > 150 && distance < 950 && lateral < 4) { period = 0.5; offset = (950 - distance) / 800 * 0.4; duty = 0.12; }
+      }
+      pushLight(out, n.x, 0.6, n.z, colour, style[1], period, offset, duty);
+    }
+    // basic runway lights where OpenStreetMap lists none
+    if (!has('rwe')) for (const [index, runway] of [main, ...scene.otherRunways].entries()) {
+      if (runway.lit === 'no') continue;
+      const length = (() => { let l = 0; for (let i = 0; i + 1 < runway.points.length; i++) l += Math.hypot(runway.points[i + 1][0] - runway.points[i][0], runway.points[i + 1][1] - runway.points[i][1]); return l; })(), half = runway.width / 2 + 1.5;
+      for (const side of [half, -half]) for (const [x, z, s] of along(runway.points, 60, side)) pushLight(out, x, 0.5, z, length >= 1800 && s > length - 600 ? LIGHT.amber : LIGHT.white, 0.7);
+      const first = runway.points[0], last = runway.points.at(-1), heading = bearing(first, last), ex = Math.sin(heading), ez = Math.cos(heading);
+      for (let k = -runway.width / 2; k <= runway.width / 2 + 0.1; k += 3.5) {
+        pushLight(out, first[0] + ez * k - ex * 1.5, 0.5, first[1] - ex * k - ez * 1.5, LIGHT.green, 0.95);            // threshold
+        pushLight(out, last[0] + ez * k + ex * 1.5, 0.5, last[1] - ex * k + ez * 1.5, index === 0 ? LIGHT.red : LIGHT.green, 0.95);   // end
+      }
+      if (length >= 1500) for (const [x, z] of along(runway.points, 30, 0)) pushLight(out, x, 0.45, z, LIGHT.white, 0.5);
+    }
+    if (!has('txc') && !has('txe')) scene.taxiways.forEach((line, i) => { if (scene.taxiLit && scene.taxiLit[i] === 'yes') for (const side of [7, -7]) for (const [x, z] of along(line, 40, side)) pushLight(out, x, 0.4, z, LIGHT.blue, 0.5); });
+    obstructionLights(scene.buildings, out);
+    const papi = navaids.filter(n => n.kind === 'papi' || n.kind === 'vasi').map(n => ({ x: n.x, z: n.z, description: String((n.tags && (n.tags.description || n.tags.ref)) || '') }));
+    return { data: new Float32Array(out), papi };
+  }
+  // The PAPI / VASI units of the runway being landed on (the one whose description names that runway end, or all if none does), as four
+  // lights each. `plane` is the aircraft's position; a light is white when the aircraft is above its slope and red below it.
+  function papiLights(scene, papi, planePos, runwayNumber) {
+    const out = [], heading = scene.runway.heading, rx = Math.cos(heading), rz = -Math.sin(heading), fx = Math.sin(heading), fz = Math.cos(heading);
+    const named = papi.filter(p => new RegExp(`\\b${runwayNumber}\\b`).test(p.description)), units = named.length ? named : papi;
+    for (const unit of units) {
+      const ahead = (planePos[0] - unit.x) * -fx + (planePos[2] - unit.z) * -fz; if (ahead <= 0) continue;     // only seen from the approach side
+      const angle = Math.atan2(planePos[1] - 1, ahead) * 180 / Math.PI;
+      [-13.5, -4.5, 4.5, 13.5].forEach((offset, i) => { const slope = (scene.glide || 3) + [-0.5, -0.17, 0.17, 0.5][i]; pushLight(out, unit.x + rx * offset, 1, unit.z + rz * offset, angle > slope ? LIGHT.white : LIGHT.red, 1.1); });
+    }
+    return out;
   }
 
   // ---- meshes -------------------------------------------------------------------------------------------------------------
@@ -512,5 +632,5 @@
   // Everything in one array (ground first), for tests and simple uses.
   function buildMesh(scene) { const { base, ground, solid } = meshParts(scene), all = new Float32Array(base.length + ground.length + solid.length); all.set(base); all.set(ground, base.length); all.set(solid, base.length + ground.length); return all; }
 
-  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
+  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, FALLBACK_AIRPORT, PLACE_NAMES, cleanText, searchPlaceUrl, parsePlaces, airportsQuery, parseAirportElements, mergeSearch, buildLights, obstructionLights, papiLights, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
 });

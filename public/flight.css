@@ -37,7 +37,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#08101d;color:var(--in
 .assist{position:absolute;left:10px;top:172px;z-index:3;width:min(268px,calc(100% - var(--map) - 30px));padding:9px 12px;border-radius:10px;background:var(--panel);backdrop-filter:blur(4px);box-shadow:0 4px 18px #0006;font-size:13px}
 .assist[hidden]{display:none}.assist h2{margin:0 0 5px;font-size:12px;letter-spacing:.08em;color:var(--muted)}.assist h2 span{color:var(--accent);font-weight:800}
 .assist dl{display:grid;gap:3px;margin:0}.assist dl div{display:flex;justify-content:space-between;gap:8px}.assist dt{color:var(--muted)}.assist dd{margin:0;font-weight:700}.assist .ok{color:#9be7a5}.assist .warn{color:#ffd23f}
-.assist p{margin:5px 0 0;color:#d6e0ef;font-size:12px}.assist p:empty{display:none}.assist label{display:flex;align-items:center;gap:7px;margin-top:6px;cursor:pointer}.assist input{accent-color:var(--accent);width:16px;height:16px}
+.assist p{margin:5px 0 0;color:#d6e0ef;font-size:12px}.assist .sub{margin-left:22px;font-size:12px;color:#d6e0ef}.assist label[hidden]{display:none}.assist p:empty{display:none}.assist label{display:flex;align-items:center;gap:7px;margin-top:6px;cursor:pointer}.assist input{accent-color:var(--accent);width:16px;height:16px}
 @media(max-width:700px){.toolbar{gap:8px;padding:6px 8px}.throttle input{width:70px}}
 .toolbar{scrollbar-width:none}.toolbar::-webkit-scrollbar{display:none}
 @media(max-width:1100px){.toolbar{gap:8px;padding:6px 8px}.toolbar select{max-width:130px;padding:0 4px}.group{gap:3px}.group button{min-width:28px;padding:0 5px}.throttle input{width:56px}.label{display:none}.credit{display:none}}

@@ -116,11 +116,13 @@
     wing(b, { le0: [0, -0.1, 3.8], le1: [0, -1.16, 3.8], chord0: 0.13, chord1: 0.09, thick: 1.2, up: [0, 0, 1], back: [-1, 0, 0], color: DARK });
     return b.data;
   }
-  const PROPELLERS = { plane: { build: cessnaPropeller, pivot: [0, -0.1, 3.8] } };
+
 
   // Airbus A320: 37.6 m long, 35.8 m span with 25 degree swept wings and sharklets, fin top 11.8 m above the ground, CFM engines.
-  function airbus(body, accent) {
-    const b = new Builder(), around = 28;
+  function airbus() {
+    // Cathay Pacific colours whatever the pilot's colour: white body, light grey belly, a dark green tail fin with the "brushwing" strokes,
+    // green sharklets and a green stripe along the windows.
+    const body = [0.74, 0.76, 0.79], green = [0.0, 0.4, 0.34], leaf = [0.86, 0.93, 0.9], b = new Builder(), around = 28;
     const z = [18.8, 18.4, 17.8, 17.0, 16.0, 14.6, 12, 9.5, 7, 4.5, 2, -0.5, -3, -5.5, -8, -10.5, -12.5, -14.5, -16.5, -17.8, -18.8];
     const shape = { 18.8: [.1, .1, -.3], 18.4: [.62, .68, -.28], 17.8: [1.1, 1.2, -.22], 17.0: [1.55, 1.7, -.12], 16.0: [1.82, 1.92, -.04], 14.6: [1.96, 2.0, 0], 12: [2, 2, 0], 9.5: [2, 2, 0], 7: [2, 2, 0], 4.5: [2, 2, 0], 2: [2, 2, 0], '-0.5': [2, 2, 0], '-3': [2, 2, 0], '-5.5': [2, 2, 0], '-8': [2, 2, 0], '-10.5': [1.99, 2, .02], '-12.5': [1.9, 1.95, .12], '-14.5': [1.62, 1.7, .4], '-16.5': [1.2, 1.28, .75], '-17.8': [.75, .82, 1.05], '-18.8': [.3, .36, 1.25] };
     const sections = z.map(zz => { const [rx, ry, cy] = shape[zz]; return { z: zz, rx, ry, cy }; });
@@ -128,13 +130,14 @@
       const t = 2 * Math.PI * j / around, zz = z[i];
       if (zz > 16.4 && zz < 18.3 && Math.sin(t) > 0.32 && Math.sin(t) < 0.82 && Math.abs(Math.cos(t)) < 0.78) return GLASS;      // cockpit windows
       if (zz < 15 && zz > -11 && Math.abs(Math.cos(t)) > 0.9 && Math.sin(t) > 0.12 && Math.sin(t) < 0.32) return GLASS;         // cabin windows
-      if (Math.sin(t) < -0.35 && zz > -17 && zz < 13) return body;                                                              // livery belly
-      if (zz < -15.5) return body;                                                                                                // tail cone
+      if (Math.sin(t) < -0.35 && zz > -17 && zz < 13) return body;                                                              // light grey belly
+      if (zz < -15.5) return green;                                                                                                // tail cone in the tail colour
+      if (Math.abs(Math.cos(t)) > 0.9 && Math.sin(t) > 0.34 && Math.sin(t) < 0.5 && zz > -11 && zz < 15) return green;       // thin green stripe above the windows
       return WHITE;
     }, { start: DARK, end: LIGHT });
     for (const side of [1, -1]) {
       wing(b, { le0: [0, -1.3, 3.4], le1: [side * 17.8, -0.4, -3.6], chord0: 6.4, chord1: 1.6, thick: 0.85, color: WHITE });                       // swept wing
-      wing(b, { le0: [side * 17.8, -0.4, -3.2], le1: [side * 18.0, 1.5, -4.5], chord0: 1.6, chord1: 0.55, thick: 0.9, up: [1, 0, 0], color: body });          // sharklet
+      wing(b, { le0: [side * 17.8, -0.4, -3.2], le1: [side * 18.0, 1.5, -4.5], chord0: 1.6, chord1: 0.55, thick: 0.9, up: [1, 0, 0], color: green });          // sharklet
       wing(b, { le0: [0, 0.85, -14.0], le1: [side * 6.3, 1.5, -17.5], chord0: 3.9, chord1: 1.3, thick: 0.7, color: WHITE });                         // tailplane
       // engine: nacelle with a dark inlet lip and a core cone behind, on a pylon
       const ex = side * 5.7, ey = -2.5;
@@ -144,6 +147,7 @@
       tube(b, [side * 2.6, -1.4, -0.5], [side * 2.7, -3.0, -0.8], 0.16, 0.14, GREY, 8); wheel(b, [side * 2.7, -3.25, -0.8], 0.55, 0.55, DARK);                  // main gear
     }
     wing(b, { le0: [0, 1.5, -10.6], le1: [0, 8.0, -16.2], chord0: 6.6, chord1: 2.6, thick: 0.75, up: [1, 0, 0], color: body });                                 // fin
+    for (const side of [1, -1]) for (let i = 0; i < 4; i++) wing(b, { le0: [side * 0.24, 2.4 + i * 0.35, -11.6 - i * 0.6], le1: [side * 0.24, 6.6 + i * 0.3, -15.8 - i * 0.2], chord0: 0.55, chord1: 0.3, thick: 0.25, up: [1, 0, 0], color: leaf });   // brushwing strokes
     tube(b, [0, -1.6, 13], [0, -3.1, 13], 0.12, 0.1, GREY, 8); wheel(b, [0, -3.45, 13], 0.35, 0.5, DARK);                                                       // nose gear
     return b.data;
   }
@@ -166,22 +170,35 @@
     return b.data;
   }
 
-  // A quadcopter drone, drawn at 1/7 scale by the page (so these numbers are 7 times real size and it is about 0.65 m across).
+  // A minimal FPV drone in real size (about 0.2 m across): a small grey body, four thin arms with a motor each, a camera at the nose and no
+  // prop guards. The rotors are a separate translucent part (see PROPELLERS) that spins; the body is grey whatever colour the pilot has,
+  // with a small LED in the pilot's colour.
+  const DUCTS = [[0.085, 0.085], [-0.085, 0.085], [0.085, -0.085], [-0.085, -0.085]];   // where the four rotors are
   function drone(body, accent) {
-    const b = new Builder(), rotor = [0.78, 0.8, 0.84];
-    ellipsoid(b, [0, 0, 0], 0.5, 0.2, 0.62, body, 14, 8);
-    ellipsoid(b, [0, -0.28, 0.6], 0.17, 0.17, 0.17, DARK, 10, 6); ellipsoid(b, [0, -0.28, 0.75], 0.08, 0.08, 0.06, [0.2, 0.5, 0.9], 8, 4);
-    ellipsoid(b, [0, 0.2, 0.55], 0.14, 0.06, 0.12, accent, 8, 4);
-    for (const [x, zz] of [[1.5, 1.5], [-1.5, 1.5], [1.5, -1.5], [-1.5, -1.5]]) {
-      tube(b, [0, 0.02, 0], [x, 0.05, zz], 0.07, 0.06, DARK, 6);
-      tube(b, [x, 0.0, zz], [x, 0.32, zz], 0.2, 0.18, DARK, 10);
-      tube(b, [x, 0.36, zz], [x, 0.39, zz], 0.78, 0.78, rotor, 18);
+    const b = new Builder(), grey = [0.52, 0.54, 0.58], dark = [0.24, 0.25, 0.28];
+    ellipsoid(b, [0, 0, 0], 0.034, 0.017, 0.062, grey, 14, 8);                               // body
+    ellipsoid(b, [0, 0.004, -0.05], 0.028, 0.02, 0.034, dark, 12, 6);                        // battery
+    ellipsoid(b, [0, -0.003, 0.06], 0.017, 0.015, 0.02, dark, 10, 6);                        // camera
+    ellipsoid(b, [0, 0, 0.078], 0.008, 0.008, 0.005, [0.15, 0.3, 0.55], 8, 4);               // lens
+    ellipsoid(b, [0, 0.02, -0.06], 0.005, 0.003, 0.009, accent, 8, 4);                       // LED in the pilot's colour
+    for (const [x, z] of DUCTS) {
+      tube(b, [x * 0.2, 0, z * 0.2], [x, 0.006, z], 0.006, 0.005, grey, 6);                  // arm
+      tube(b, [x, 0.0, z], [x, 0.014, z], 0.01, 0.01, dark, 10);                             // motor
     }
-    for (const x of [0.62, -0.62]) tube(b, [x, -0.5, -0.75], [x, -0.5, 0.75], 0.04, 0.04, DARK, 6);
-    for (const [x, zz] of [[0.62, -0.5], [-0.62, -0.5], [0.62, 0.5], [-0.62, 0.5]]) tube(b, [x * 0.8, -0.2, zz], [x, -0.5, zz], 0.04, 0.04, DARK, 6);
+    return b.data;
+  }
+  // One rotor, drawn at the origin: two thin blades (no disc: the spinning blades are enough). The page draws it four times, translucent and spinning.
+  function droneRotor() {
+    const b = new Builder();
+    ellipsoid(b, [0, 0, 0], 0.05, 0.0012, 0.0055, [0.2, 0.21, 0.23], 10, 6); ellipsoid(b, [0, 0, 0], 0.0055, 0.0012, 0.05, [0.2, 0.21, 0.23], 10, 6);
     return b.data;
   }
 
+  // Spinning parts: the geometry (at the origin), where each copy sits, which axis it turns about, and how see-through it is.
+  const PROPELLERS = {
+    plane: { build: cessnaPropeller, alpha: 1, rotors: [{ pivot: [0, -0.1, 3.8], axis: 'z', dir: 1 }] },
+    drone: { build: droneRotor, alpha: 0.4, rotors: DUCTS.map(([x, z], i) => ({ pivot: [x, 0.016, z], axis: 'y', dir: i % 2 ? -1 : 1 })) }
+  };
   const MODELS = { plane: cessna, airbus, jet, drone };
   function build(model, body, accent) { return new Float32Array((MODELS[model] || cessna)(body, accent)); }
   // The size of a model: [width, height, length] in model units.
@@ -190,7 +207,19 @@
     for (let i = 0; i < data.length; i += 9) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], data[i + k]); hi[k] = Math.max(hi[k], data[i + k]); }
     return { min: lo, max: hi, size: hi.map((v, k) => v - lo[k]) };
   }
-  // The part of a model that spins (with its pivot), or null.
-  function propeller(model) { const part = PROPELLERS[model]; return part ? { data: new Float32Array(part.build()), pivot: part.pivot } : null; }
-  return { build, propeller, extent, MODELS: Object.keys(MODELS) };
+  // Navigation lights of each vehicle (model coordinates): red on the left wingtip, green on the right, white at the tail, a white strobe and a
+  // red beacon. [position, colour, period, offset, duty, size in metres]; period 0 is steady.
+  const NAV_RED = [1, 0.1, 0.08], NAV_GREEN = [0.15, 1, 0.3], NAV_WHITE = [1, 0.97, 0.9];
+  const NAV = {
+    plane: [[[-5.5, 1.12, 0.7], NAV_RED, 0, 0, 1, 0.35], [[5.5, 1.12, 0.7], NAV_GREEN, 0, 0, 1, 0.35], [[0, 1.2, -4.4], NAV_WHITE, 0, 0, 1, 0.3], [[0, 1.98, -3.8], NAV_WHITE, 1.4, 0, 0.07, 0.6], [[0, 0.95, 0.2], NAV_RED, 1.2, 0.4, 0.45, 0.4]],
+    airbus: [[[-17.9, 1.6, -4.4], NAV_RED, 0, 0, 1, 0.7], [[17.9, 1.6, -4.4], NAV_GREEN, 0, 0, 1, 0.7], [[0, 1.2, -18.8], NAV_WHITE, 0, 0, 1, 0.6], [[-17.8, -0.2, -5.4], NAV_WHITE, 1.1, 0, 0.06, 1.2], [[17.8, -0.2, -5.4], NAV_WHITE, 1.1, 0.5, 0.06, 1.2], [[0, 2.1, 3], NAV_RED, 1.3, 0, 0.45, 0.8], [[0, -2.1, 3], NAV_RED, 1.3, 0.6, 0.45, 0.8], [[-4.5, -1.2, 2.5], NAV_WHITE, 0, 0, 1, 0.9], [[4.5, -1.2, 2.5], NAV_WHITE, 0, 0, 1, 0.9]],
+    jet: [[[-4.8, 0.2, -3.2], NAV_RED, 0, 0, 1, 0.4], [[4.8, 0.2, -3.2], NAV_GREEN, 0, 0, 1, 0.4], [[0, 0.3, -7.6], [1, 0.5, 0.15], 0, 0, 1, 1.4], [[0, 3.4, -6.5], NAV_WHITE, 1.2, 0, 0.07, 0.6]],
+    drone: [[[-0.085, 0.02, 0.085], NAV_RED, 0, 0, 1, 0.025], [[0.085, 0.02, 0.085], NAV_GREEN, 0, 0, 1, 0.025], [[0, 0.025, -0.07], NAV_WHITE, 0.9, 0, 0.12, 0.04]]
+  };
+  const navLights = model => NAV[model] || NAV.plane;
+
+  // The part of a model that spins: { data, rotors: [{ pivot, axis, dir }], alpha } or null. The Cessna's blades are modelled in place, so
+  // its pivot is where they are; the drone's rotor is modelled at the origin and placed at each pivot.
+  function propeller(model) { const part = PROPELLERS[model]; return part ? { data: new Float32Array(part.build()), rotors: part.rotors, alpha: part.alpha, atOrigin: model === 'drone' } : null; }
+  return { build, propeller, navLights, extent, MODELS: Object.keys(MODELS) };
 });

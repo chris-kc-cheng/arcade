@@ -185,7 +185,7 @@ test('Lake Ontario water: the harbour and the lake are water, the mainland and t
 });
 
 test('Hong Kong and Haneda: OpenStreetMap runways split into several ways are joined, and the approach comes from the right side', () => {
-  assert.deepEqual(Object.keys(OSM.AIRPORTS).sort(), ['CYTZ', 'EGLC', 'RJTT', 'VHHH', 'VHHV']);
+  assert.deepEqual(Object.keys(OSM.AIRPORTS).sort(), ['CYTZ', 'EGLC', 'RJTT', 'VHHH', 'VICTORIA']);
   const joined = OSM.joinChains([[[1, 1], [2, 2]], [[3, 3], [2, 2]], [[3, 3], [4, 4]]]);
   assert.equal(joined.length, 1); assert.deepEqual(joined[0].map(p => p[0]), [1, 2, 3, 4]);
   const expected = { CYTZ: { heading: 71.2, ref: '08/26', from: 'west' }, VHHH: { heading: 70.8, ref: '07R/25L', from: 'west' }, RJTT: { heading: 330, ref: '16L/34R', from: 'south' } };
@@ -345,19 +345,25 @@ test('the land base is its own mesh, drawn before streamed tiles so it never cov
   assert.equal(OSM.buildMesh(OSM.fallbackScene('VHHH')).length, parts.base.length + parts.ground.length + parts.solid.length);
 });
 
-test('jet mode: no stall and no limits, so loops, rolls and inverted flight all work', () => {
+test('jet: a real flight model with progressive controls, 9 g and Mach limits of the physics, and loops, rolls and inverted flight', () => {
   const FLY = { surface: () => 'land', obstacle: () => null };
-  const jet = () => { const plane = Physics.spawn('jet', { x: 0, z: 0, heading: 0, distance: 2000, crossing: 800 }); plane.y = 1500; plane.speed = 120; plane.vel = [0, 0, 120]; plane.throttle = 0.7; return plane; };
-  const loop = jet(); let upsideDown = false, vertical = false;
-  for (let t = 0; t < 12; t += 0.025) { Physics.step(loop, { elevator: t < 5 ? 1 : 0 }, 0.025, FLY); if (Math.abs(loop.roll) > 2.5) upsideDown = true; if (loop.pitch > 1.4) vertical = true; }
-  assert.ok(upsideDown && vertical && !loop.crashed, 'a loop goes up, over the top inverted and comes down');
-  const roll = jet(); let last = roll.roll, total = 0;
-  for (let t = 0; t < 4; t += 0.025) { Physics.step(roll, { aileron: 1 }, 0.025, FLY); let d = roll.roll - last; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; total += d; last = roll.roll; }
-  assert.ok(total > 2 * Math.PI, 'a full barrel roll (right wing down) and more'); assert.ok(roll.y > 1400, 'and it keeps its height');
+  const jet = (speed, throttle, y = 3000) => { const plane = Physics.spawn('jet', { x: 0, z: 0, heading: 0, distance: 2000, crossing: 800 }); plane.y = y; plane.speed = speed; plane.vel = [0, 0, speed]; plane.axes = Physics.axesFrom(0, 0, 0); plane.throttle = throttle; return plane; };
+  // the stick is progressive: a key press ramps in, it is not an instant full deflection
+  const ramp = jet(200, 0.75); Physics.step(ramp, { elevator: 1 }, 0.025, FLY); assert.ok(ramp.elevator > 0 && ramp.elevator < 0.1, 'the first instant gives a small deflection'); Physics.advance(ramp, { elevator: 1 }, 0.5, FLY); assert.ok(ramp.elevator > 0.9);
+  const level = jet(150, 0.7); Physics.advance(level, {}, 20, FLY); near(level.g, 1, 0.05, 'stick released holds 1 g'); assert.ok(Math.abs(level.y - 3000) < 120 && Math.abs(level.gamma) < 0.03, 'and the flight path');
+  const loop = jet(250, 0.75); let gmax = 0, upsideDown = false, vertical = false;
+  for (let t = 0; t < 25; t += 0.025) { Physics.step(loop, { elevator: 1 }, 0.025, FLY); gmax = Math.max(gmax, loop.g); if (Math.abs(loop.roll) > 2.5) upsideDown = true; if (loop.pitch > 1.4) vertical = true; }
+  assert.ok(upsideDown && vertical && !loop.crashed, 'a loop goes up, over the top inverted and comes down'); assert.ok(gmax > 5 && gmax <= 9.2, `the pull is limited to 9 g (${gmax.toFixed(1)})`); assert.ok(loop.speed < 200, 'the loop cost energy');
+  const roll = jet(200, 0.75); let last = roll.roll, total = 0;
+  for (let t = 0; t < 2; t += 0.025) { Physics.step(roll, { aileron: 1 }, 0.025, FLY); let d = roll.roll - last; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; total += d; last = roll.roll; }
+  assert.ok(total > 2 * Math.PI, 'a full roll in two seconds (right wing down)'); assert.ok(roll.y > 2900, 'keeping its height');
+  const slow = jet(55, 0, 3000), fast = jet(220, 0.75); Physics.advance(slow, { elevator: 0.3 }, 1, FLY); Physics.advance(fast, { elevator: 0.3 }, 1, FLY); assert.ok(Math.abs(slow.pitch - 0) < Math.abs(fast.pitch) + 0.5, 'less authority slow');
+  const brake = jet(200, 0.3), free = jet(200, 0.3); Physics.advance(brake, { brake: true }, 10, FLY); Physics.advance(free, {}, 10, FLY); assert.ok(brake.speed < free.speed - 4, 'the air brake slows the jet');
+  const hi = jet(300, 1, 8000); Physics.advance(hi, {}, 80, FLY, 0.05); assert.ok(hi.mach > 1.0 && hi.mach < 2.6, `afterburner takes it supersonic (Mach ${hi.mach.toFixed(2)})`);
+  const mil = jet(250, 0.75, 3000), ab = jet(250, 1, 3000); Physics.advance(mil, {}, 10, FLY); Physics.advance(ab, {}, 10, FLY); assert.ok(ab.speed > mil.speed + 20, 'afterburner adds thrust above 75% throttle');
   const axes = Physics.axesFrom(1.2, 0.4, -0.7), angles = Physics.anglesOf(axes);
   near(angles.heading, 1.2, 1e-9, 'heading'); near(angles.pitch, 0.4, 1e-9, 'pitch'); near(angles.roll, -0.7, 1e-9, 'roll');
-  const dive = jet(); dive.y = 100; dive.pitch = -1; Physics.startJet(Object.assign(dive, { gamma: -1 })); Physics.advance(dive, {}, 10, { surface: () => 'land', obstacle: () => null });
-  assert.ok(dive.crashed, 'a jet still hits the ground');
+  const dive = jet(200, 0.5); dive.y = 100; dive.pitch = -1; Physics.startJet(Object.assign(dive, { gamma: -1 })); Physics.advance(dive, {}, 10, FLY); assert.ok(dive.crashed, 'a jet still hits the ground');
 });
 
 test('drone mode never crashes: buildings stop it, the ground holds it, water is fine, and it flies like a drone', () => {
@@ -444,7 +450,7 @@ test('the vehicles are smooth lofted models with real dimensions, not boxes', ()
   const cessna = size('plane'), airbus = size('airbus'), jet = size('jet'), drone = size('drone');
   near(cessna.size[2], 8.2, 0.6, 'Cessna length'); near(cessna.size[0], 11, 0.4, 'Cessna span'); near(cessna.size[1], 2.9, 0.4, 'Cessna height');
   near(airbus.size[2], 37.6, 1.2, 'A320 length'); near(airbus.size[0], 36, 0.7, 'A320 span'); near(airbus.size[1], 11.8, 0.8, 'A320 height');
-  near(jet.size[2], 15, 1.5, 'jet length'); near(jet.size[0], 9.6, 0.8, 'jet span'); near(drone.size[0] * 0.14, 0.65, 0.08, 'drone is about 0.65 m across at the drawn 1/7 scale');
+  near(jet.size[2], 15, 1.5, 'jet length'); near(jet.size[0], 9.6, 0.8, 'jet span'); near(drone.size[0], 0.21, 0.05, 'the drone is about 0.2 m across, like a DJI Avata');
   for (const model of Models.MODELS) {
     const data = Models.build(model, [0.8, 0.1, 0.1], [0.1, 0.2, 0.45]);
     assert.equal(data.length % 27, 0, `${model}: whole triangles`); assert.ok(data.length / 27 > 600, `${model} has many more faces than a box model`); assert.ok(data.every(Number.isFinite), `${model}: finite numbers`);
@@ -476,10 +482,10 @@ test('approach advice: phase, flaps, target speed and the throttle that holds it
 });
 
 test('London City (from the east, 5.5 degrees) and Victoria Harbour (from the west, a place with no runway) are available', () => {
-  const eglc = OSM.fallbackScene('EGLC'), place = OSM.fallbackScene('VHHV');
+  const eglc = OSM.fallbackScene('EGLC'), place = OSM.fallbackScene('VICTORIA');
   assert.equal(eglc.glide, 5.5); assert.equal(eglc.place, false); near(degrees(eglc.runway.heading), 273, 4, 'landing towards the west, runway 27'); assert.equal(eglc.water, null, 'no sea at London City');
   assert.equal(place.place, true); const start = OSM.finalApproach(place); near(degrees(start.heading), 78, 1e-6, 'flying east'); assert.ok(start.x < -5000, 'starting west of the harbour'); assert.equal(place.start.alt, 420);
-  assert.equal(OSM.waterQueries({ lat: 51.5, lon: 0 }, OSM.AIRPORTS.EGLC.region, 'EGLC').length, 0); assert.match(OSM.waterQueries({ lat: 22.29, lon: 114.17 }, OSM.AIRPORTS.VHHV.region, 'VHHV')[0], /coastline/);
+  assert.equal(OSM.waterQueries({ lat: 51.5, lon: 0 }, OSM.AIRPORTS.EGLC.region, 'EGLC').length, 0); assert.match(OSM.waterQueries({ lat: 22.29, lon: 114.17 }, OSM.AIRPORTS.VICTORIA.region, 'VICTORIA')[0], /coastline/);
   const p = Physics.spawn('plane', { x: start.x, z: start.z, heading: start.heading, distance: 0, glide: 0, crossing: 420, speed: 52, throttle: 0.5, flaps: 0 });
   near(p.y, 420, 1e-9, 'starts at cruise height'); near(p.gamma, 0, 1e-9, 'level'); assert.equal(p.flaps, 0);
   // a river that crosses the box is closed between its two banks
@@ -491,7 +497,7 @@ test('London City (from the east, 5.5 degrees) and Victoria Harbour (from the we
 
 test('the Cessna propeller is its own part that spins, and the wings and tail join the body', () => {
   const Models = require('../public/flight-models.js');
-  const prop = Models.propeller('plane'); assert.ok(prop && prop.data.length > 0); near(prop.pivot[2], 3.8, 1e-9, 'pivot at the nose'); assert.equal(Models.propeller('airbus'), null);
+  const prop = Models.propeller('plane'); assert.ok(prop && prop.data.length > 0); near(prop.rotors[0].pivot[2], 3.8, 1e-9, 'pivot at the nose'); assert.equal(Models.propeller('airbus'), null);
   const body = Models.build('plane', [1, 0, 0], [0, 0, 1]); let rootAcrossCentre = 0; for (let i = 0; i < body.length; i += 9) if (Math.abs(body[i]) < 1e-6 && body[i + 1] > 0.6 && body[i + 1] < 1.0 && Math.abs(body[i + 2] - 0.5) < 0.9) rootAcrossCentre++;
   assert.ok(rootAcrossCentre > 4, 'the wing root reaches the centreline, sunk into the cabin roof');
   const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'), render = fs.readFileSync(path.join(__dirname, '../public/flight-render.js'), 'utf8');
@@ -554,4 +560,111 @@ test('drone W / S go forward and backward and I / K tilt the camera', () => {
   const look = make(); Physics.advance(look, { view: 1 }, 1, FLY); assert.ok(look.view > 0.9);
   const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'); const keys = js.match(/const DRONE_KEYMAP = \{[^}]*\}/)[0];
   assert.match(keys, /KeyW: 'forward'/); assert.match(keys, /KeyS: 'backward'/); assert.match(keys, /KeyI: 'viewUp'/); assert.match(keys, /KeyK: 'viewDown'/);
+});
+
+test('night mode: airport lights come from OpenStreetMap where it has them, basic runway lights otherwise, and blink only where real lights do', () => {
+  const lights = scene => { const { data, papi } = OSM.buildLights(scene), list = []; for (let i = 0; i < data.length; i += 10) list.push({ x: data[i], y: data[i + 1], z: data[i + 2], rgb: [data[i + 3], data[i + 4], data[i + 5]], period: data[i + 6], offset: data[i + 7], duty: data[i + 8], size: Math.round(data[i + 9] * 100) / 100 }); return { list, papi }; };
+  const base = OSM.fallbackScene('CYTZ'), plain = lights(base);
+  assert.ok(plain.list.length > 40, 'a lit runway gets edge, threshold and end lights'); assert.ok(plain.list.some(l => l.rgb[1] > 0.9 && l.rgb[0] < 0.3), 'green threshold'); assert.ok(plain.list.some(l => l.rgb[0] > 0.9 && l.rgb[1] < 0.2), 'red end');
+  assert.ok(plain.list.filter(l => l.size !== 2.2).every(l => l.period === 0), 'no blinking where the data lists no flashing lights (only the red lights on towers blink)'); assert.equal(plain.papi.length, 0, 'no PAPI that OpenStreetMap does not list');
+  const dark = { ...base, runway: { ...base.runway, lit: 'no' }, otherRunways: base.otherRunways.map(r => ({ ...r, lit: 'no' })) }; assert.equal(lights(dark).list.filter(l => l.size !== 2.2).length, 0, 'lit=no means no runway lights');
+  // approach lights listed by OpenStreetMap: the ones on the centreline beyond 150 m flash in sequence towards the runway
+  const h = base.runway.heading, d = [Math.sin(h), Math.cos(h)], t = base.runway.threshold, at = s => ({ kind: 'als', tags: {}, x: t[0] - d[0] * s, z: t[1] - d[1] * s });
+  const withAls = lights({ ...base, navaids: [at(100), at(300), at(600), at(900), { ...at(600), x: at(600).x + d[1] * 30 * -1, z: at(600).z + d[0] * 30 }, { kind: 'papi', tags: { description: 'PAPI 27 LEFT' }, x: t[0] + 50, z: t[1] }, { kind: 'rwe', tags: { 'light:colour': 'red' }, x: 5, z: 5 }] });
+  const als = withAls.list.filter(l => l.size === 0.9);
+  assert.equal(als.length, 5); assert.equal(als.filter(l => l.period > 0).length, 3, 'three centreline lights beyond 150 m flash'); assert.equal(als[0].period, 0, 'the one at 100 m and the off-centre one are steady');
+  const flashing = als.filter(l => l.period > 0).sort((a, b) => a.offset - b.offset); assert.ok(flashing[0].offset < flashing[2].offset, 'the sequence runs along the approach');
+  assert.equal(withAls.papi.length, 1); assert.ok(withAls.list.some(l => l.rgb[0] > 0.9 && l.rgb[1] < 0.2 && l.size === 0.7), 'a listed red edge light is drawn red, and the synthetic runway lights are skipped when edge lights are listed');
+  assert.equal(withAls.list.filter(l => l.size === 0.7 && l.rgb[0] > 0.9 && l.rgb[1] > 0.9).length, 0, 'no invented edge lights beside the real ones');
+  // PAPI: white above the slope, red below
+  const papi = [{ x: t[0] + 300 * d[0], z: t[1] + 300 * d[1], description: 'PAPI 08 LEFT' }], count = (y) => { const out = OSM.papiLights(base, papi, [t[0] - d[0] * 1000, y, t[1] - d[1] * 1000], '08'); let white = 0; for (let i = 0; i < out.length; i += 10) if (out[i + 4] > 0.9 && out[i + 3] > 0.9 && out[i + 5] > 0.7) white++; return [out.length / 10, white]; };
+  assert.deepEqual(count(100), [4, 4], 'high: all white'); assert.deepEqual(count(30), [4, 0], 'low: all red'); const onPath = count(1300 * Math.tan(3 * Math.PI / 180)); assert.equal(onPath[1], 2, 'on the glide path: two white, two red');
+  assert.deepEqual(OSM.papiLights(base, papi, [t[0] + d[0] * 800, 100, t[1] + d[1] * 800], '08'), [], 'not shown from behind the unit');
+  // red blinking obstruction lights on tall buildings only
+  const towers = OSM.obstructionLights([{ id: 1, height: 250, ring: [0, 0, 10, 0, 10, 10, 0, 10] }, { id: 2, height: 40, ring: [0, 0, 10, 0, 10, 10, 0, 10] }]); assert.equal(towers.length, 10); assert.ok(towers[6] > 0 && towers[3] > 0.9 && towers[4] < 0.2, 'blinking and red');
+  const Models = require('../public/flight-models.js'); for (const model of Models.MODELS) { const nav = Models.navLights(model); assert.ok(nav.some(n => n[1][0] > 0.9 && n[1][1] < 0.2) && nav.some(n => n[1][1] > 0.9 && n[1][0] < 0.3) && nav.some(n => n[2] > 0), `${model}: red and green navigation lights and a strobe`); }
+  const render = fs.readFileSync(path.join(__dirname, '../public/flight-render.js'), 'utf8'), html = fs.readFileSync(path.join(__dirname, '../public/flight.html'), 'utf8'), js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8');
+  assert.match(render, /uNight/); assert.match(render, /gl_PointSize/); assert.match(html, /id="night"/); assert.match(js, /KeyN/); assert.match(js, /flight-night/);
+  assert.equal(Models.propeller('drone').data.length / 27 < 400, true, 'the drone rotor is just blades now, with no disc'); assert.ok(Models.extent(Models.build('drone', [1, 0, 0], [0, 1, 0])).size[0] < 0.25, 'the drone has no prop guards');
+});
+
+test('Victoria Harbour is a place with no made-up code: it is found by name and shown by name; the Airbus wears Cathay Pacific colours', () => {
+  assert.equal(OSM.resolveCode('Victoria Harbour'), 'VICTORIA'); assert.equal(OSM.resolveCode('hong kong  victoria harbor'), 'VICTORIA'); assert.equal(OSM.resolveCode('VHHV'), 'VHHV', 'the old invented code is now just an unknown code');
+  assert.ok(OSM.AIRPORTS.VICTORIA.place && !/^V[A-Z]{3}$/.test(OSM.AIRPORTS.VICTORIA.label)); assert.equal(OSM.AIRPORTS.VHHV, undefined);
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'); assert.match(js, /const shownAs = code => \{ const o = OSM\.AIRPORTS\[code\]; return o && o\.place \? o\.label : code; \}/);
+  const Models = require('../public/flight-models.js'), data = Models.build('airbus', [1, 0, 0], [0, 0, 1]);
+  const has = (r, g, b) => { for (let i = 0; i < data.length; i += 9) if (Math.abs(data[i + 6] - r) < 0.02 && Math.abs(data[i + 7] - g) < 0.02 && Math.abs(data[i + 8] - b) < 0.02) return true; return false; };
+  assert.ok(has(0.0, 0.4, 0.34), 'Cathay green tail'); assert.ok(has(0.86, 0.93, 0.9), 'brushwing strokes'); assert.ok(!has(1, 0, 0), 'the pilot colour is not used on the Airbus');
+});
+
+test('airport search also matches the city or region: "Osaka" finds Kansai (KIX) although its name has no Osaka', () => {
+  const places = OSM.parsePlaces([{ category: 'place', type: 'city', name: 'Osaka', lat: '34.69', lon: '135.50' }, { category: 'highway', name: 'Osaka Street', lat: '1', lon: '1' }, { category: 'boundary', type: 'administrative', name: 'Osaka Prefecture', lat: '34.7', lon: '135.52' }, { category: 'place', name: 'Kyoto', lat: '35.01', lon: '135.77' }]);
+  assert.deepEqual(places.map(p => p.name), ['Osaka', 'Kyoto'], 'places only, close duplicates dropped, at most two'); assert.match(OSM.searchPlaceUrl("Osaka'; drop"), /q=Osaka\+drop|q=Osaka%27\+drop|q=Osaka%27%3B/);
+  const query = OSM.airportsQuery('Osaka', places); assert.match(query, /\["iata"\]\(around:70000,34\.6900,135\.5000\)/); assert.match(query, /\["name:en"~"Osaka",i\]/); assert.match(query, /\["name"~"Osaka",i\]/); assert.equal(OSM.airportsQuery('', []), '');
+  const json = { elements: [
+    { type: 'way', id: 1, center: { lat: 34.43, lon: 135.24 }, tags: { aeroway: 'aerodrome', icao: 'RJBB', iata: 'KIX', name: 'Kansai International Airport', 'name:en': 'Kansai International Airport' } },
+    { type: 'way', id: 2, center: { lat: 34.78, lon: 135.44 }, tags: { aeroway: 'aerodrome', icao: 'RJOO', iata: 'ITM', name: 'Osaka International Airport', 'name:en': 'Osaka Itami Airport' } },
+    { type: 'node', id: 3, lat: 34.63, lon: 135.22, tags: { aeroway: 'aerodrome', iata: 'UKB', name: 'Kobe Airport' } }, { type: 'node', id: 4, lat: 0, lon: 0, tags: { aeroway: 'aerodrome', name: 'No code field' } }] };
+  const found = OSM.parseAirportElements(json, places, 'Osaka');
+  assert.deepEqual(found.map(r => r.code).sort(), ['RJBB', 'RJOO', 'UKB']); assert.ok(found.find(r => r.code === 'RJOO').matched && !found.find(r => r.code === 'RJBB').matched);
+  assert.match(found.find(r => r.code === 'RJBB').where, /\d+ km from Osaka/); assert.equal(found.find(r => r.code === 'UKB').iata, 'UKB');
+  const merged = OSM.mergeSearch([{ code: 'RJOO', icao: 'RJOO', iata: 'ITM', name: 'Itami', matched: true, km: 0 }], found);
+  assert.deepEqual(merged.map(r => r.code), ['RJOO', 'UKB', 'RJBB'], 'name matches first, then the nearest airports; one entry per code'); assert.equal(merged.length, 3);
+  assert.equal(OSM.parseAirportElements({ elements: json.elements }, [{ name: 'Kansai', lat: 34.5, lon: 135.2 }], 'kansai').find(r => r.code === 'RJBB').matched, true, 'the name search matches too');
+});
+
+test('an invalid airport code never breaks the game: it goes to the default, Hong Kong International (VHHH)', () => {
+  assert.equal(OSM.FALLBACK_AIRPORT, 'VHHH'); assert.ok(OSM.AIRPORTS.VHHH, 'and it is a built-in airport, so it works even offline');
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8');
+  assert.match(js, /OSM\.resolveCode\(wanted\) \|\| OSM\.FALLBACK_AIRPORT/); assert.match(js, /if \(!scene\) \{ goToFallback\(error\); return; \}/); assert.match(js, /await goToFallback\(`No airport matches/);
+  assert.match(js, /async function goToFallback\(reason\)[^\n]*openAirport\(OSM\.FALLBACK_AIRPORT\)/);
+});
+
+test('autopilot: off by default; once on it steers to a heading and flies to an altitude without stalling, for every aircraft', () => {
+  const FLY = { surface: () => 'land', obstacle: () => null };
+  const fly = (mode, speed, throttle, y, headingDeg, altitudeChange, seconds) => {
+    const plane = Physics.spawn(mode, { x: 0, z: 0, heading: 0, distance: 2000, crossing: 800 }); Object.assign(plane, { y, speed, throttle, gamma: 0, flaps: 0, pitch: 0.05, heading: 0, onGround: false });
+    if (mode === 'jet') { plane.vel = [0, 0, speed]; plane.axes = Physics.axesFrom(0, 0, 0); }
+    const target = { heading: headingDeg * Math.PI / 180, alt: y + altitudeChange }; let stalled = false, bank = 0;
+    for (let t = 0; t < seconds; t += 0.025) { Physics.step(plane, Physics.autopilot(plane, target), 0.025, FLY); stalled = stalled || plane.stalled; bank = Math.max(bank, Math.abs(plane.roll)); }
+    return { plane, target, stalled, bank };
+  };
+  for (const [mode, args] of [['plane', [50, 0.65, 1000, 90, 200, 240]], ['plane', [50, 0.4, 1200, -60, -150, 240]], ['airbus', [110, 0.4, 3000, 120, 300, 240]], ['jet', [200, 0.75, 3000, 170, 500, 120]]]) {
+    const { plane, target, stalled, bank } = fly(mode, ...args);
+    assert.ok(!plane.crashed && !stalled, `${mode}: no crash or stall`); near(Math.abs(Physics.wrapAngle(plane.heading - target.heading)) * 180 / Math.PI, 0, 3, `${mode} heading`); near(plane.y, target.alt, 15, `${mode} altitude`);
+    assert.ok(bank < (mode === 'jet' ? 1.4 : 0.55), `${mode}: a gentle bank for the airliner and light plane (${(bank * 57.3).toFixed(0)} degrees)`);
+  }
+  const level = Physics.spawn('plane', { x: 0, z: 0, heading: 0, distance: 2000 }); level.onGround = true; assert.equal(Physics.autopilot(level, { heading: 1, alt: 100 }), null, 'nothing to do on the ground');
+  const drone = Physics.spawn('drone', { x: 0, z: 0, heading: 0, distance: 2000 }); drone.y = 50; for (let t = 0; t < 40; t += 0.025) Physics.step(drone, { ...Physics.autopilot(drone, { heading: 1, alt: 120 }) }, 0.025, FLY);
+  near(drone.y, 120, 3, 'the drone holds an altitude'); near(Physics.wrapAngle(drone.heading), 1, 0.05, 'and a heading');
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'), html = fs.readFileSync(path.join(__dirname, '../public/flight.html'), 'utf8');
+  assert.match(html, /id="autoPilot"[\s\S]*id="autoThrottle"/); assert.doesNotMatch(html, /id="ap"/); assert.match(js, /let night = false, ap = \{ on: false/); assert.match(js, /KeyP/); assert.match(js, /if \(ap\.on\) applyAutopilot\(input, dt\)/); assert.match(js, /setAutopilot\(false\);/);
+});
+
+test('autopilot landing: the Cessna and the Airbus fly back to the runway from anywhere, line up, flare, touch down softly on the centreline and stop', () => {
+  const runway = { x: 0, z: 0, heading: 71 * Math.PI / 180, length: 1500, width: 30, glide: 3 }, d = [Math.sin(runway.heading), Math.cos(runway.heading)], r = [Math.cos(runway.heading), -Math.sin(runway.heading)];
+  const frame = (x, z) => [x * d[0] + z * d[1], x * r[0] + z * r[1]];
+  const world = { obstacle: () => null, surface: (x, z) => { const [s, c] = frame(x, z); return Math.abs(c) < runway.width / 2 + 3 && s > -30 && s < runway.length + 30 ? 'runway' : 'land'; } };
+  const land = (mode, start) => {
+    const plane = Physics.spawn(mode, { x: 0, z: 0, heading: 0, distance: 2000 }); Object.assign(plane, { x: start.x, z: start.z, y: start.y, heading: start.heading, speed: start.speed, throttle: 0.5, flaps: 0, gamma: 0, pitch: 0.05, onGround: false });
+    const memo = {}; let flapAt = 0, touch = null, phases = new Set();
+    for (let t = 0; t < 1200; t += 0.025) {
+      const cmd = Physics.autoland(plane, runway, memo); if (!cmd) break; phases.add(cmd.phase);
+      plane.throttle += Math.max(-0.0075, Math.min(0.0075, cmd.throttle - plane.throttle)); if (t - flapAt > 1.5 && (plane.flaps || 0) !== cmd.flaps) { plane.flaps = (plane.flaps || 0) + Math.sign(cmd.flaps - (plane.flaps || 0)); flapAt = t; }
+      const wasAir = !plane.onGround, sink = -plane.verticalSpeed; Physics.step(plane, { elevator: cmd.elevator, aileron: cmd.aileron, rudder: cmd.rudder, brake: cmd.brake }, 0.025, world);
+      if (wasAir && plane.onGround && !touch) { const [s, c] = frame(plane.x, plane.z); touch = { s, c, sink }; }
+      if (plane.crashed || cmd.done) break;
+    }
+    return { plane, touch, phases, end: frame(plane.x, plane.z) };
+  };
+  const startsFor = mode => { const v = mode === 'plane' ? 45 : 80, home = [-5200 * d[0], -5200 * d[1]]; return [{ x: home[0], z: home[1], y: 15 + Math.tan(3 * Math.PI / 180) * 5200, heading: runway.heading, speed: v }, { x: 6000, z: 5000, y: 1500, heading: 0.5, speed: v * 1.1 }, { x: 4000 * d[0] - 3000, z: 4000 * d[1] + 3000, y: 800, heading: runway.heading + Math.PI, speed: v }]; };
+  for (const mode of ['plane', 'airbus']) for (const [i, start] of startsFor(mode).entries()) {
+    const { plane, touch, phases, end } = land(mode, start), label = `${mode} start ${i + 1}`;
+    assert.ok(!plane.crashed, `${label}: no crash (${plane.crashed})`); assert.ok(touch, `${label}: it touched down`); assert.ok(Math.abs(touch.c) < 12, `${label}: on the centreline (${Math.round(touch.c)} m off)`);
+    assert.ok(touch.s > 0 && touch.s < runway.length * 0.6, `${label}: touched down on the runway, not before it or too far down (${Math.round(touch.s)} m)`); assert.ok(touch.sink < 3.6, `${label}: softly (${touch.sink.toFixed(1)} m/s)`);
+    assert.ok(plane.onGround && plane.speed < 3 && end[0] < runway.length, `${label}: stopped on the runway (${Math.round(end[0])} m)`); for (const phase of ['FINAL', 'FLARE', 'ROLLOUT']) assert.ok(phases.has(phase), `${label}: ${phase}`);
+  }
+  assert.equal(Physics.autoland(Physics.spawn('jet', { x: 0, z: 0, heading: 0, distance: 2000 }), runway), null, 'the jet is not landed for you'); assert.equal(Physics.autoland(Physics.spawn('drone', { x: 0, z: 0, heading: 0, distance: 2000 }), runway), null);
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'), html = fs.readFileSync(path.join(__dirname, '../public/flight.html'), 'utf8');
+  assert.match(html, /id="autoPilot"[\s\S]*id="autoThrottle"/); assert.doesNotMatch(html, /autoLand/, 'one button: no separate landing switch'); assert.match(js, /P\.autoland\(plane, runwayInfo\(\), ap\.memo\)/); assert.match(js, /AUTOLAND/);
 });
