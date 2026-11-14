@@ -18,7 +18,7 @@
     maxBank: 0.9,                                       // radians of bank at full aileron
     rotateSpeed: 26, brakeDecel: 4.5, rollingDecel: 0.35, grassDecel: 1.6,
     maxSpeed: 110, flapCl: 0.1, flapCd: 0.012, maxFlaps: 3, pitchLag: 0.35, rollLag: 0.5, elevRate: 1.6, ailRate: 2.4,
-    approachSpeed: 40, approachFlaps: 0, approachThrottle: 0.17, approachCrossing: 15
+    approachSpeed: 40, approachFlaps: 0, approachThrottle: 0.17, approachCrossing: 15, gearCd: 0, gearTravel: 0
   };
   const AIRBUS = {
     mass: 64000, wingArea: 122.6, rho: 1.15,
@@ -28,7 +28,7 @@
     trimAlpha: 0.1, elevatorRange: 0.13, maxBank: 0.6,
     rotateSpeed: 78, brakeDecel: 3.2, rollingDecel: 0.25, grassDecel: 1.2,
     maxSpeed: 260, flapCl: 0.24, flapCd: 0.018, maxFlaps: 4, pitchLag: 0.9, rollLag: 1.1, elevRate: 0.9, ailRate: 1.2,
-    approachSpeed: 76, approachFlaps: 3, approachThrottle: 0.18, approachCrossing: 20
+    approachSpeed: 76, approachFlaps: 3, approachThrottle: 0.21, approachCrossing: 20, gearCd: 0.016, gearTravel: 8
   };
   const SAFE = { sinkRate: 4.2, bank: 0.3, nosePitch: -0.12, speedOffRunway: 20 };
   AIRBUS.safe = { sinkRate: 4.6, bank: 0.14, nosePitch: -0.07, speedOffRunway: 30 }; PLANE.safe = SAFE;
@@ -38,7 +38,7 @@
   function create(overrides = {}) {
     return Object.assign({
       x: 0, y: 0, z: 0, heading: Math.PI / 2, pitch: 0, roll: 0, gamma: 0, speed: 0, throttle: 0,
-      elevator: 0, aileron: 0, rudder: 0, brake: false, flaps: 0, mode: 'plane', axes: null, vel: null,
+      elevator: 0, aileron: 0, rudder: 0, brake: false, flaps: 0, gear: 1, gearDown: true, mode: 'plane', axes: null, vel: null,
       onGround: true, crashed: null, stalled: false, aoa: 0, verticalSpeed: 0, time: 0, surface: 'runway'
     }, overrides);
   }
@@ -115,7 +115,7 @@
     const dir = speed > 1 ? vnorm(v) : a.f, now = speed > 1 ? alphaOf() : 0, stalled = Math.abs(now) > J.alphaStall;
     const cl = Math.abs(now) <= J.alphaStall ? J.clAlpha * now : Math.abs(now) < 1.2 ? Math.sign(now) * Math.max(0.4, J.clAlpha * J.alphaStall - 1.8 * (Math.abs(now) - J.alphaStall)) : 1.0 * Math.sin(2 * now);
     const mach = speed / Math.max(295, 340 - 0.004 * plane.y), wave = 0.035 * clamp((mach - 0.9) / 0.35, 0, 1);
-    const cd = J.cd0 + wave + J.k * cl * cl + 0.9 * Math.sin(now) ** 2 + (plane.brake ? J.brakeCd : 0);
+    const cd = J.cd0 + wave + J.k * cl * cl + 0.9 * Math.sin(now) ** 2 + (plane.brake ? J.brakeCd : 0) + 0.018 * (plane.gear ?? 1);
     const lift = qS * cl, drag = qS * cd, t = plane.throttle, base = t <= 0.75 ? J.thrustMil * t / 0.75 : J.thrustMil + (t - 0.75) / 0.25 * (J.thrustAb - J.thrustMil), thrust = base * Math.pow(rho / 1.225, 0.7);
     let lhat = vcomb(a.u, 1, dir, -vdot(a.u, dir)); lhat = vlen(lhat) > 1e-6 ? vnorm(lhat) : a.u;
     const force = [a.f[0] * thrust + lhat[0] * lift - dir[0] * drag, a.f[1] * thrust + lhat[1] * lift - dir[1] * drag, a.f[2] * thrust + lhat[2] * lift - dir[2] * drag];
@@ -135,6 +135,7 @@
     if (surface === 'water') { if (plane.y <= -0.2) { plane.crashed = 'You ditched in the water.'; plane.speed = 0; } return plane; }
     if (plane.y > 0) return plane;
     const level = Math.abs(plane.roll) < 0.35 && plane.pitch > -0.12 && plane.pitch < 0.4, gentle = -plane.verticalSpeed < 6;
+    if (gearUpLanding(plane)) { plane.crashed = 'You landed with the landing gear up.'; plane.speed = 0; return plane; }
     if (!(level && gentle) || (surface === 'land' && plane.speed > 45)) { plane.crashed = level && gentle ? 'You hit the ground off the runway too fast.' : 'You hit the ground.'; plane.speed = 0; return plane; }
     plane.y = 0; plane.onGround = true; plane.axes = null; plane.vel = null; plane.gamma = 0; plane.verticalSpeed = 0; plane.roll = 0; plane.surface = surface; return plane;
   }
@@ -160,12 +161,23 @@
 
   // Advance the plane by `dt` seconds (keep dt small, 0.05 s or less). `world` answers questions about the ground:
   //   world.surface(x, z) -> 'runway' | 'land' | 'water'     world.obstacle(x, y, z) -> a building the point is inside, or null
+  // Retractable gear (the Airbus and the jet; the Cessna 172's is fixed): it takes `gearTravel` seconds to go up or down (1 = down and locked, 0 = up),
+  // adds drag while it is out, cannot be raised while the aircraft is on the ground, and landing with it up is a crash.
+  const GEAR_TRAVEL = { airbus: 8, jet: 5 };
+  const retractable = plane => Boolean(GEAR_TRAVEL[plane.mode]);
+  function moveGear(plane, dt) {
+    if (!retractable(plane)) { plane.gear = 1; plane.gearDown = true; return; }
+    if (plane.onGround) plane.gearDown = true;
+    const step = dt / GEAR_TRAVEL[plane.mode]; plane.gear = clamp((plane.gear ?? 1) + (plane.gearDown === false ? -step : step), 0, 1);
+  }
+  const gearUpLanding = plane => retractable(plane) && (plane.gear ?? 1) < 0.9;
   // `scale` is the simulation speed: it makes the plane cover `scale` times the distance in the same time, but turning, pitching, rolling
   // and accelerating happen at their normal rates, so the plane handles the same at 100x as at 1x.
   function step(plane, input, dt, world, scale = 1) {
     if (plane.crashed) return plane;
     const S = specOf(plane);
     plane.time += dt; const move = dt * scale;
+    moveGear(plane, dt);
     if (plane.mode === 'drone') return stepDrone(plane, input, dt, world, move);
     if (plane.mode === 'jet' && !plane.onGround) return stepJet(plane, input, dt, world, move);
     // Controls ramp towards the stick position and spring back to centre: elevator +1 is stick back (nose up).
@@ -191,7 +203,7 @@
     let cl = cl0 + S.clAlpha * clamp(plane.aoa, -0.4, 0.6);
     plane.stalled = plane.aoa > S.stallAlpha;
     if (plane.stalled) cl = cl0 + S.clAlpha * S.stallAlpha - 3.2 * (plane.aoa - S.stallAlpha); // the lift falls away past the stall
-    const lift = q * S.wingArea * cl, drag = q * S.wingArea * (S.cd0 + flaps * S.flapCd + S.k * cl * cl);
+    const lift = q * S.wingArea * cl, drag = q * S.wingArea * (S.cd0 + flaps * S.flapCd + (S.gearCd || 0) * (plane.gear ?? 1) + S.k * cl * cl);
     const cosRoll = Math.max(0.2, Math.cos(plane.roll));
     const dSpeed = (thrust * Math.cos(plane.aoa) - drag) / S.mass - G * Math.sin(plane.gamma);
     const dGamma = (lift * cosRoll + thrust * Math.sin(plane.aoa)) / (S.mass * speed) - G * Math.cos(plane.gamma) / speed;
@@ -218,7 +230,8 @@
     if (surface === 'water') { if (plane.y <= -0.2) { plane.crashed = 'You ditched in the water.'; plane.speed = 0; } return plane; }
     if (plane.y > 0) return plane;
     const sink = -plane.verticalSpeed;
-    if (sink > S.safe.sinkRate) plane.crashed = 'Hard landing: you came down too fast.';
+    if (gearUpLanding(plane)) plane.crashed = 'You landed with the landing gear up.';
+    else if (sink > S.safe.sinkRate) plane.crashed = 'Hard landing: you came down too fast.';
     else if (Math.abs(plane.roll) > S.safe.bank) plane.crashed = 'You touched down with a wing low.';
     else if (plane.pitch < S.safe.nosePitch) plane.crashed = 'You touched down nose first.';
     else if (surface === 'land' && plane.speed > S.safe.speedOffRunway + 10) plane.crashed = 'You hit the ground off the runway too fast.';
@@ -285,7 +298,7 @@
   // After a crash: the same vehicle, in the same place and heading but at `altitude` metres, flying level at a safe speed.
   function recover(plane, altitude = 300) {
     const mode = plane.mode, heading = plane.heading;
-    Object.assign(plane, { crashed: null, onGround: false, stalled: false, y: altitude, gamma: 0, pitch: 0.05, roll: 0, speed: mode === 'jet' ? 110 : mode === 'drone' ? 0 : mode === 'airbus' ? 95 : 45, throttle: mode === 'jet' ? 0.5 : mode === 'drone' ? 0 : mode === 'airbus' ? 0.5 : 0.55, flaps: 0, elevator: 0, aileron: 0, rudder: 0, brake: false, verticalSpeed: 0, axes: null, vel: null, heading });
+    Object.assign(plane, { crashed: null, onGround: false, stalled: false, y: altitude, gamma: 0, pitch: 0.05, roll: 0, speed: mode === 'jet' ? 110 : mode === 'drone' ? 0 : mode === 'airbus' ? 95 : 45, throttle: mode === 'jet' ? 0.5 : mode === 'drone' ? 0 : mode === 'airbus' ? 0.5 : 0.55, flaps: 0, elevator: 0, aileron: 0, rudder: 0, brake: false, verticalSpeed: 0, axes: null, vel: null, heading, gear: altitude < 150 ? 1 : 0, gearDown: altitude < 150 });
     if (mode === 'drone') Object.assign(plane, { vf: 0, vs: 0, vz: 0, pitch: 0, view: -0.15 });
     return mode === 'jet' ? startJet(plane) : plane;
   }
@@ -331,7 +344,7 @@
     const s = dx * d[0] + dz * d[1], c = dx * r[0] + dz * r[1], g = runway.glide * Math.PI / 180, height = plane.y, speed = Math.max(plane.speed, 1), kt = speed * KNOTS;
     const slopeAlt = along => 15 + Math.tan(g) * Math.max(0, -along);
     if (plane.onGround) {
-      return { phase: 'ROLLOUT', elevator: 0, aileron: 0, rudder: clamp(2.2 * wrapAngle(h - plane.heading) - 0.02 * c, -1, 1), throttle: 0, flaps: 0, brake: true, done: plane.speed < 2.5, s, c };
+      return { phase: 'ROLLOUT', elevator: 0, aileron: 0, rudder: clamp(2.2 * wrapAngle(h - plane.heading) - 0.02 * c, -1, 1), throttle: 0, flaps: 0, gear: true, brake: true, done: plane.speed < 2.5, s, c };
     }
     const distance = Math.hypot(s, c), jet = mode === 'jet', join = jet || mode === 'airbus' ? 9000 : 6500, flareAt = mode === 'airbus' ? 14 : jet ? 11 : 9;
     // Once lined up it stays lined up unless it is well outside the funnel (no flip-flopping at the edge).
@@ -357,7 +370,7 @@
     if (jet) { targetKt = distance > 12000 ? 300 : distance > 7000 ? 230 : distance > 3500 ? 190 : 170; throttle = clamp(0.3 + 0.012 * (targetKt - kt), 0, 0.75); }
     else { const advice = PHASES[mode] ? advicePhase(mode, distance, runway.glide) : null; flaps = advice.flaps; targetKt = advice.kt; throttle = clamp(advice.throttle + 0.012 * (advice.kt - kt), 0, 1); }
     if (phase === 'FLARE' || (height < 12 && s > -300)) throttle = 0;
-    return { phase, elevator: control.elevator, aileron: control.aileron, rudder: 0, throttle, flaps, brake: false, done: false, kt: targetKt, s, c };
+    return { phase, elevator: control.elevator, aileron: control.aileron, rudder: 0, throttle, flaps, gear: phase !== 'NAV' || distance < 12000, brake: false, done: false, kt: targetKt, s, c };
   }
   // The landing schedule at a distance from the runway: flaps, speed and the throttle that holds the speed on the path.
   function advicePhase(mode, distance, glide) {
@@ -366,18 +379,46 @@
     return { flaps: Math.min(phase.flaps, S.maxFlaps), kt: phase.kt, throttle: throttleFor(mode, phase.kt / KNOTS, Math.min(phase.flaps, S.maxFlaps), path) };
   }
 
+  // ---- automatic flights: takeoff, climb, cruise ----------------------------------------------------------------------------------
+  // For a flight from one airport to another with the autopilot on (the Cessna and the Airbus): `autotakeoff` takes off from the runway (full
+  // throttle, rudder on the centreline, rotate at the right speed), `enroute` climbs to a cruise altitude, flies to a heading and holds the
+  // speed and then `autoland` (above) flies the approach and landing at the other end. Each returns the stick, the throttle and flap setting
+  // to go to, whether the gear should be down, and the phase, like `autoland`.
+  const CRUISE = { plane: { climbKt: 76, cruiseKt: 100, maxAlt: 1800, rotate: 29 }, airbus: { climbKt: 200, cruiseKt: 230, maxAlt: 6000, rotate: 72 } };
+  function spawnTakeoff(mode, { x, z, heading }) {
+    return create({ mode, x, z, y: mode === 'drone' ? 1.2 : 0, heading, onGround: mode !== 'drone', speed: 0, throttle: 0, flaps: mode === 'plane' || mode === 'airbus' ? 1 : 0, pitch: 0, roll: 0, gamma: 0, gear: 1, gearDown: true });
+  }
+  // The cruise altitude for a route of `distance` metres (short routes do not climb as high), and the distance from the destination at
+  // which the descent begins: down a 3 degree path to the point where the approach starts.
+  function routePlan(mode, distance, glide = 3) {
+    const spec = CRUISE[mode] || CRUISE.plane, cruise = clamp(distance * 0.025, 500, spec.maxAlt), join = mode === 'airbus' ? 9000 : 6500;
+    return { cruise, descentAt: (cruise - 450) / Math.tan(glide * Math.PI / 180) + join, swapAt: (cruise - 450) / Math.tan(glide * Math.PI / 180) + join + 20000 };
+  }
+  function autotakeoff(plane, runway) {
+    if (plane.crashed || !CRUISE[plane.mode]) return null;
+    const spec = CRUISE[plane.mode], h = runway.heading, dx = plane.x - runway.x, dz = plane.z - runway.z, c = dx * Math.cos(h) - dz * Math.sin(h);
+    return { phase: 'TAKEOFF', elevator: plane.speed > spec.rotate ? 1 : 0, aileron: 0, rudder: clamp(2.2 * wrapAngle(h - plane.heading) - 0.02 * c, -1, 1), throttle: 1, flaps: 1, gear: true, brake: false };
+  }
+  function enroute(plane, plan) {
+    const mode = plane.mode, spec = CRUISE[mode]; if (plane.crashed || !spec) return null;
+    const climbing = plane.y < plan.alt - 100, kt = plane.speed * KNOTS, targetKt = climbing ? spec.climbKt : spec.cruiseKt;
+    const control = autopilot(plane, { heading: plan.heading, alt: plan.alt, maxBank: 0.4 }) || { elevator: 0, aileron: 0 };
+    const level = throttleFor(mode, targetKt / KNOTS, 0, 0, 0), throttle = climbing ? clamp(0.98 + 0.01 * (targetKt - kt), 0.6, 1) : clamp(level + 0.02 * (targetKt - kt), 0, 1);
+    return { phase: climbing ? 'CLIMB' : 'CRUISE', elevator: control.elevator, aileron: control.aileron, rudder: 0, throttle, flaps: plane.y < 300 ? 1 : 0, gear: plane.y < 80, brake: false };
+  }
+
   // ---- landing advice -------------------------------------------------------------------------------------------------------------
   // For a Cessna or the Airbus near an airport: the phase of the approach from the distance to the runway, and the flaps, speed and
   // throttle that go with it. The throttle is not a guess: it is the thrust that holds the target speed on the phase's flight path,
   // worked out from the aircraft's own lift and drag, divided by the thrust the engines have at that speed.
   const PHASES = {
     plane: [{ name: 'Cruise', upTo: Infinity, flaps: 0, kt: 95, glide: 0 }, { name: 'Slow down', upTo: 9000, flaps: 1, kt: 85, glide: -1.5 }, { name: 'Approach', upTo: 5000, flaps: 2, kt: 75, glide: -3 }, { name: 'Final', upTo: 2800, flaps: 3, kt: 68, glide: -3 }],
-    airbus: [{ name: 'Cruise', upTo: Infinity, flaps: 0, kt: 230, glide: 0 }, { name: 'Slow down', upTo: 14000, flaps: 1, kt: 190, glide: -2 }, { name: 'Approach', upTo: 8000, flaps: 2, kt: 165, glide: -3 }, { name: 'Final', upTo: 4500, flaps: 3, kt: 148, glide: -3 }, { name: 'Short final', upTo: 2000, flaps: 4, kt: 138, glide: -3 }]
+    airbus: [{ name: 'Cruise', upTo: Infinity, flaps: 0, kt: 230, glide: 0 }, { name: 'Slow down', upTo: 14000, flaps: 1, kt: 190, glide: -2 }, { name: 'Approach', upTo: 8000, flaps: 2, kt: 165, glide: -3, gear: true }, { name: 'Final', upTo: 4500, flaps: 3, kt: 148, glide: -3, gear: true }, { name: 'Short final', upTo: 2000, flaps: 4, kt: 138, glide: -3, gear: true }]
   };
   // The throttle (0 to 1) that holds `speed` (m/s) on a path of `glide` degrees with the given flaps.
-  function throttleFor(mode, speed, flaps, glideDegrees) {
+  function throttleFor(mode, speed, flaps, glideDegrees, gear = 0) {
     const S = SPECS[mode] || PLANE, gamma = glideDegrees * Math.PI / 180, weight = S.mass * G, q = 0.5 * S.rho * speed * speed;
-    const cl = weight * Math.cos(gamma) / (q * S.wingArea), drag = q * S.wingArea * (S.cd0 + flaps * S.flapCd + S.k * cl * cl);
+    const cl = weight * Math.cos(gamma) / (q * S.wingArea), drag = q * S.wingArea * (S.cd0 + flaps * S.flapCd + (S.gearCd || 0) * gear + S.k * cl * cl);
     return clamp((drag + weight * Math.sin(gamma)) / Math.min(S.staticThrust, S.power / Math.max(speed, 12)), 0, 1);
   }
   // distance: metres to the landing threshold (along the approach); height: metres above the runway; departing: the aircraft is
@@ -386,15 +427,15 @@
     const mode = plane.mode; if (!PHASES[mode]) return null;
     const S = SPECS[mode] || PLANE, kt = v => v / KNOTS;
     if (plane.onGround) {
-      if (plane.speed < 5) return { phase: 'Takeoff', flaps: 1, throttle: 1, kt: Math.round(S.rotateSpeed * KNOTS), note: 'Full throttle, rotate at the speed shown.' };
-      return { phase: 'Rollout', flaps: 0, throttle: 0, kt: 0, note: 'Throttle idle, flaps up, brakes (Space).' };
+      if (plane.speed < 5) return { phase: 'Takeoff', flaps: 1, gear: S.gearTravel ? true : null, throttle: 1, kt: Math.round(S.rotateSpeed * KNOTS), note: 'Full throttle, rotate at the speed shown.' };
+      return { phase: 'Rollout', flaps: 0, gear: S.gearTravel ? true : null, throttle: 0, kt: 0, note: 'Throttle idle, flaps up, brakes (Space).' };
     }
-    if (departing && distance < 15000) return { phase: 'Departure', flaps: height < 150 ? 1 : 0, throttle: Math.min(1, throttleFor(mode, S.approachSpeed * 1.15, 0, 4)), kt: Math.round(S.approachSpeed * 1.15 * KNOTS), note: 'Climb away, then flaps up.' };
+    if (departing && distance < 15000) return { phase: 'Departure', flaps: height < 150 ? 1 : 0, gear: S.gearTravel ? height < 60 : null, throttle: Math.min(1, throttleFor(mode, S.approachSpeed * 1.15, 0, 4)), kt: Math.round(S.approachSpeed * 1.15 * KNOTS), note: S.gearTravel ? 'Climb away, then gear and flaps up.' : 'Climb away, then flaps up.' };
     const list = PHASES[mode]; let phase = list[0]; for (const candidate of list) if (distance <= candidate.upTo) phase = candidate;
-    if (height < 14 && distance < 1800) return { phase: 'Flare', flaps: phase.flaps, throttle: 0, kt: phase.kt, note: 'Throttle idle and raise the nose gently.' };
+    if (height < 14 && distance < 1800) return { phase: 'Flare', flaps: phase.flaps, gear: S.gearTravel ? true : null, throttle: 0, kt: phase.kt, note: 'Throttle idle and raise the nose gently.' };
     const path = phase.glide <= -3 ? -glide : phase.glide;   // the approach path of this airport (London City is 5.5 degrees)
-    const flaps = Math.min(phase.flaps, S.maxFlaps), throttle = throttleFor(mode, phase.kt / KNOTS, flaps, path);
-    return { phase: phase.name, flaps, throttle, kt: phase.kt, glide: path, note: '' };
+    const flaps = Math.min(phase.flaps, S.maxFlaps), gearDown = Boolean(phase.gear), throttle = throttleFor(mode, phase.kt / KNOTS, flaps, path, gearDown ? 1 : 0);
+    return { phase: phase.name, flaps, gear: S.gearTravel ? gearDown : null, throttle, kt: phase.kt, glide: path, note: '' };
   }
 
   // Start for each mode on the same final approach: a Cessna, a jet (faster, no limits) or a drone hovering over the approach path.
@@ -405,5 +446,5 @@
     return plane;
   }
 
-  return { autoland, autopilot, wrapAngle, AUTOPILOT, advice, throttleFor, PHASES, PLANE, AIRBUS, SPECS, SAFE, JET, DRONE, G, create, approach, spawn, switchMode, recover, startJet, axesFrom, anglesOf, step, advance, contact, readout, clamp };
+  return { spawnTakeoff, routePlan, autotakeoff, enroute, CRUISE, moveGear, retractable, GEAR_TRAVEL, autoland, autopilot, wrapAngle, AUTOPILOT, advice, throttleFor, PHASES, PLANE, AIRBUS, SPECS, SAFE, JET, DRONE, G, create, approach, spawn, switchMode, recover, startJet, axesFrom, anglesOf, step, advance, contact, readout, clamp };
 });

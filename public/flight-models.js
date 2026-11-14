@@ -119,7 +119,7 @@
 
 
   // Airbus A320: 37.6 m long, 35.8 m span with 25 degree swept wings and sharklets, fin top 11.8 m above the ground, CFM engines.
-  function airbus() {
+  function airbus(_pilotColour, _accent, withGear = true) {
     // Cathay Pacific colours whatever the pilot's colour: white body, light grey belly, a dark green tail fin with the "brushwing" strokes,
     // green sharklets and a green stripe along the windows.
     const body = [0.74, 0.76, 0.79], green = [0.0, 0.4, 0.34], leaf = [0.86, 0.93, 0.9], b = new Builder(), around = 28;
@@ -144,16 +144,16 @@
       fuselage(b, [{ z: 4.35, rx: .8, ry: .8, cx: ex, cy: ey }, { z: 4.1, rx: .98, ry: .98, cx: ex, cy: ey }, { z: 3.0, rx: 1.05, ry: 1.05, cx: ex, cy: ey }, { z: 1.0, rx: 1.0, ry: 1.0, cx: ex, cy: ey }, { z: -0.6, rx: .86, ry: .86, cx: ex, cy: ey }], 20, (i) => i === 0 ? DARK : WHITE, { start: DARK, end: GREY });
       tube(b, [ex, ey, -0.5], [ex, ey, -1.7], 0.6, 0.12, GREY, 12);
       wing(b, { le0: [ex, -1.05, 2.8], le1: [ex, -1.75, 3.3], chord0: 3.6, chord1: 3.0, thick: 0.9, up: [1, 0, 0], color: WHITE });                              // pylon
-      tube(b, [side * 2.6, -1.4, -0.5], [side * 2.7, -3.0, -0.8], 0.16, 0.14, GREY, 8); wheel(b, [side * 2.7, -3.25, -0.8], 0.55, 0.55, DARK);                  // main gear
+      if (withGear) { tube(b, [side * 2.6, -1.4, -0.5], [side * 2.7, -3.0, -0.8], 0.16, 0.14, GREY, 8); wheel(b, [side * 2.7, -3.25, -0.8], 0.55, 0.55, DARK); }   // main gear
     }
     wing(b, { le0: [0, 1.5, -10.6], le1: [0, 8.0, -16.2], chord0: 6.6, chord1: 2.6, thick: 0.75, up: [1, 0, 0], color: body });                                 // fin
     for (const side of [1, -1]) for (let i = 0; i < 4; i++) wing(b, { le0: [side * 0.24, 2.4 + i * 0.35, -11.6 - i * 0.6], le1: [side * 0.24, 6.6 + i * 0.3, -15.8 - i * 0.2], chord0: 0.55, chord1: 0.3, thick: 0.25, up: [1, 0, 0], color: leaf });   // brushwing strokes
-    tube(b, [0, -1.6, 13], [0, -3.1, 13], 0.12, 0.1, GREY, 8); wheel(b, [0, -3.45, 13], 0.35, 0.5, DARK);                                                       // nose gear
+    if (withGear) { tube(b, [0, -1.6, 13], [0, -3.1, 13], 0.12, 0.1, GREY, 8); wheel(b, [0, -3.45, 13], 0.35, 0.5, DARK); }   // nose gear
     return b.data;
   }
 
   // A fighter-style jet: 15 m long, 9.6 m span, swept wings, twin fins, bubble canopy and side intakes.
-  function jet(body, accent) {
+  function jet(body, accent, withGear = true) {
     const b = new Builder();
     const sections = [[7.6, .05, .05, .1], [7.0, .26, .22, .1], [5.6, .5, .44, .15], [3.6, .75, .68, .2], [0.5, .9, .82, .2], [-4, .95, .78, .2], [-6.8, .85, .7, .15], [-7.5, .68, .58, .15]];
     fuselage(b, sections.map(([zz, rx, ry, cy]) => ({ z: zz, rx, ry, cy })), 20, (i, j) => { const t = 2 * Math.PI * j / 20; return i >= 7 ? DARK : (Math.sin(t) < -0.5 && i > 1 ? [0.55, 0.58, 0.64] : [0.62, 0.65, 0.7]); }, { end: DARK });
@@ -164,9 +164,9 @@
       wing(b, { le0: [0, 0.1, -4.4], le1: [side * 3.6, 0.15, -6.9], chord0: 3.0, chord1: 1.1, thick: 0.5, color: [0.62, 0.65, 0.7] });
       wing(b, { le0: [side * 1.0, 0.7, -3.4], le1: [side * 1.35, 3.5, -6.5], chord0: 3.4, chord1: 1.5, thick: 0.6, up: [1, 0, 0], color: body });
       fuselage(b, [{ z: 4.4, rx: .55, ry: .6, cx: side * 1.15, cy: -0.2 }, { z: 4.2, rx: .66, ry: .7, cx: side * 1.15, cy: -0.2 }, { z: 1.5, rx: .75, ry: .78, cx: side * 1.1, cy: -0.1 }, { z: -1.5, rx: .6, ry: .62, cx: side * 1.0, cy: 0 }], 14, (i) => i === 0 ? DARK : [0.58, 0.61, 0.67], { start: DARK });
-      tube(b, [side * 0.8, -0.2, -0.6], [side * 1.05, -1.1, -0.6], 0.07, 0.06, GREY, 6); wheel(b, [side * 1.05, -1.3, -0.6], 0.3, 0.2, DARK);
+      if (withGear) { tube(b, [side * 0.8, -0.2, -0.6], [side * 1.05, -1.1, -0.6], 0.07, 0.06, GREY, 6); wheel(b, [side * 1.05, -1.3, -0.6], 0.3, 0.2, DARK); }
     }
-    tube(b, [0, -0.4, 4.4], [0, -1.2, 4.5], 0.06, 0.05, GREY, 6); wheel(b, [0, -1.4, 4.5], 0.25, 0.16, DARK);
+    if (withGear) { tube(b, [0, -0.4, 4.4], [0, -1.2, 4.5], 0.06, 0.05, GREY, 6); wheel(b, [0, -1.4, 4.5], 0.25, 0.16, DARK); }
     return b.data;
   }
 
@@ -200,7 +200,17 @@
     drone: { build: droneRotor, alpha: 0.4, rotors: DUCTS.map(([x, z], i) => ({ pivot: [x, 0.016, z], axis: 'y', dir: i % 2 ? -1 : 1 })) }
   };
   const MODELS = { plane: cessna, airbus, jet, drone };
-  function build(model, body, accent) { return new Float32Array((MODELS[model] || cessna)(body, accent)); }
+  // `withGear` false leaves the retractable gear out (the page draws it separately, folding it up and down); the Cessna's gear is fixed.
+  function build(model, body, accent, withGear = true) { return new Float32Array((MODELS[model] || cessna)(body, accent, withGear)); }
+  // The gear that can retract: its geometry in the model's own place and the height it folds up to.
+  const GEARS = { airbus: { fold: -1.3 }, jet: { fold: -0.2 } };
+  function gearPart(model, body = [1, 0, 0], accent = [0, 0, 1]) {
+    if (!GEARS[model]) return null;
+    const all = MODELS[model](body, accent, true), bare = MODELS[model](body, accent, false), key = (data, i) => data.slice(i, i + 9).join(',');
+    const have = new Set(); for (let i = 0; i < bare.length; i += 9) have.add(key(bare, i));
+    const out = []; for (let i = 0; i < all.length; i += 9) if (!have.has(key(all, i))) for (let k = 0; k < 9; k++) out.push(all[i + k]);
+    return { data: new Float32Array(out), fold: GEARS[model].fold };
+  }
   // The size of a model: [width, height, length] in model units.
   function extent(data) {
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
@@ -218,8 +228,32 @@
   };
   const navLights = model => NAV[model] || NAV.plane;
 
+  // Flaps, drawn on the wing: slotted Fowler panels that slide back and tilt down at the trailing edge as the flaps are lowered. Each panel is
+  // a unit slab (1 long along +x, 1 deep along -z, hinged along its front edge) that the renderer places, stretches and turns about its hinge.
+  // The angles are the deflection at each flap notch (the Cessna's 0, 10, 20 and 30 degrees; the Airbus's UP, 1, 2, 3 and FULL).
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function flapPanels(wingAt, ranges, depth) {          // wingAt(t) -> { y, zLeading, chord } for t = fraction of the half span
+    const panels = [];
+    for (const side of [1, -1]) for (const [t1, t2] of ranges) {
+      const a = wingAt(t1), b = wingAt(t2), hinge = w => ({ y: w.y - 0.02, z: w.zLeading - 0.74 * w.chord }), ha = hinge(a), hb = hinge(b);
+      const half = [side * a.x, side * b.x], lo = half[0] < half[1] ? 0 : 1, p = [[side * a.x, ha.y, ha.z], [side * b.x, hb.y, hb.z]], from = p[lo], to = p[1 - lo];
+      const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      panels.push({ origin: from, axis: [(to[0] - from[0]) / length, (to[1] - from[1]) / length, (to[2] - from[2]) / length], length, chord: depth * (a.chord + b.chord) / 2 });
+    }
+    return panels;
+  }
+  const FLAPS = {
+    plane: { angles: [0, 10, 20, 30], panels: () => flapPanels(t => ({ x: 5.5 * t, y: 0.8 + 0.3 * t, zLeading: 1.0 - 0.3 * t, chord: 1.72 - 0.67 * t }), [[0.16, 0.6]], 0.3) },
+    airbus: { angles: [0, 8, 15, 20, 35], panels: () => flapPanels(t => ({ x: 17.8 * t, y: -1.3 + 0.9 * t, zLeading: 3.4 - 7.0 * t, chord: 6.4 - 4.8 * t }), [[0.14, 0.46], [0.52, 0.86]], 0.32) }
+  };
+  function flapPart(model) {
+    const spec = FLAPS[model]; if (!spec) return null;
+    const b = new Builder(); wing(b, { le0: [0, 0, 0], le1: [1, 0, 0], chord0: 1, chord1: 1, thick: 1, color: [0.93, 0.94, 0.96] });
+    return { data: new Float32Array(b.data), panels: spec.panels(), angles: spec.angles };
+  }
+
   // The part of a model that spins: { data, rotors: [{ pivot, axis, dir }], alpha } or null. The Cessna's blades are modelled in place, so
   // its pivot is where they are; the drone's rotor is modelled at the origin and placed at each pivot.
   function propeller(model) { const part = PROPELLERS[model]; return part ? { data: new Float32Array(part.build()), rotors: part.rotors, alpha: part.alpha, atOrigin: model === 'drone' } : null; }
-  return { build, propeller, navLights, extent, MODELS: Object.keys(MODELS) };
+  return { build, flapPart, gearPart, propeller, navLights, extent, MODELS: Object.keys(MODELS) };
 });

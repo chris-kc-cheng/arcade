@@ -43,6 +43,12 @@
   const LIGHT_FRAGMENT = `
     precision mediump float; varying vec3 vColor; varying float vOn; uniform float uGain;
     void main() { float r = length(gl_PointCoord - 0.5) * 2.0; float a = pow(max(1.0 - r, 0.0), 1.6); if (vOn < 0.02 || a < 0.01) discard; gl_FragColor = vec4(vColor * (0.55 + a), a * vOn * uGain); }`;
+  // The far ground: one big textured square (the world's sea and land, drawn on a canvas) under everything else, so the coastline is there
+  // beyond the detailed map and from high up. It is lit and hazed like the rest.
+  const FAR_VERTEX = `attribute vec2 aPos; uniform mat4 uViewProj; uniform float uExtent; varying vec2 vUv; varying vec3 vWorld;
+    void main() { vec3 world = vec3(aPos.x * uExtent, -0.6, aPos.y * uExtent); vWorld = world; vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = uViewProj * vec4(world, 1.0); }`;
+  const FAR_FRAGMENT = `precision mediump float; varying vec2 vUv; varying vec3 vWorld; uniform sampler2D uTex; uniform vec3 uFog; uniform vec3 uCamera; uniform float uDensity; uniform float uNight;
+    void main() { vec3 color = texture2D(uTex, vUv).rgb * (1.0 - 0.87 * uNight) + texture2D(uTex, vUv).rgb * 0.03 * uNight; float d = distance(vWorld, uCamera); float fog = 1.0 - exp(-d * uDensity * d * uDensity * 0.6); gl_FragColor = vec4(mix(color, uFog, clamp(fog, 0.0, 1.0)), 1.0); }`;
   const SKY_VERTEX = 'attribute vec2 aPos; varying float vY; void main() { vY = aPos.y * 0.5 + 0.5; gl_Position = vec4(aPos, 0.999, 1.0); }';
   const SKY_FRAGMENT = 'precision mediump float; varying float vY; uniform vec3 uTop; uniform vec3 uHorizon; uniform float uHorizonLine; void main() { float t = clamp((vY - uHorizonLine) * 2.2, 0.0, 1.0); gl_FragColor = vec4(mix(uHorizon, uTop, pow(t, 0.7)), 1.0); }';
 
@@ -78,7 +84,8 @@
       const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p;
     };
-    this.world = program(VERTEX, FRAGMENT); this.sky = program(SKY_VERTEX, SKY_FRAGMENT); this.lightProgram = program(LIGHT_VERTEX, LIGHT_FRAGMENT);
+    this.world = program(VERTEX, FRAGMENT); this.sky = program(SKY_VERTEX, SKY_FRAGMENT); this.lightProgram = program(LIGHT_VERTEX, LIGHT_FRAGMENT); this.farProgram = program(FAR_VERTEX, FAR_FRAGMENT);
+    this.farUniforms = Object.fromEntries(['uViewProj', 'uExtent', 'uTex', 'uFog', 'uCamera', 'uDensity', 'uNight'].map(name => [name, gl.getUniformLocation(this.farProgram, name)])); this.farQuad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.farQuad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW); this.farTexture = null; this.farExtent = 0;
     this.uniforms = Object.fromEntries(['uViewProj', 'uModel', 'uNormal', 'uSun', 'uFog', 'uCamera', 'uDensity', 'uAlpha', 'uNight', 'uWindows'].map(name => [name, gl.getUniformLocation(this.world, name)]));
     this.skyUniforms = Object.fromEntries(['uTop', 'uHorizon', 'uHorizonLine'].map(name => [name, gl.getUniformLocation(this.sky, name)]));
     this.skyBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
@@ -100,6 +107,21 @@
   Renderer.prototype.setTile = function (key, ground, solid) { this.removeTile(key); this.tiles.set(key, { ground: upload(this.gl, ground), solid: upload(this.gl, solid) }); };
   Renderer.prototype.removeTile = function (key) { release(this.gl, this.tiles.get(key)); this.tiles.delete(key); };
   Renderer.prototype.clearTiles = function () { for (const key of [...this.tiles.keys()]) this.removeTile(key); };
+  // The far ground from a canvas that covers `extent` metres each way from the airport (north up). Pass null to remove it.
+  Renderer.prototype.setFarGround = function (canvas, extent) {
+    const gl = this.gl; if (this.farTexture) { gl.deleteTexture(this.farTexture); this.farTexture = null; }
+    if (!canvas) return;
+    this.farTexture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.farTexture); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); this.farExtent = extent;
+  };
+  Renderer.prototype.drawFarGround = function (viewProj, camera, density, night) {
+    const gl = this.gl, u = this.farUniforms; gl.useProgram(this.farProgram);
+    gl.uniformMatrix4fv(u.uViewProj, false, viewProj); gl.uniform1f(u.uExtent, this.farExtent); gl.uniform3fv(u.uFog, this.fog); gl.uniform3fv(u.uCamera, camera.position); gl.uniform1f(u.uDensity, density); gl.uniform1f(u.uNight, night);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.farTexture); gl.uniform1i(u.uTex, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.farQuad); const at = gl.getAttribLocation(this.farProgram, 'aPos'); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.useProgram(this.world);
+  };
   // Night: the sky, haze and ground darken, building windows light up, and lights glow. `setNight` fades it in or out.
   Renderer.prototype.setNight = function (on) { this.nightTarget = on ? 1 : 0; };
   // Static lights of one piece of map (airport lights, obstruction lights on towers): 10 floats per light, see LIGHT_VERTEX.
@@ -133,9 +155,11 @@
   // Vertex data for one plane colour scheme, built once.
   Renderer.prototype.planeBuffer = function (key, body, accent, model) {
     if (this.planeCache.has(key)) return this.planeCache.get(key);
-    const gl = this.gl, data = FlightModels.build(model || 'plane', body, accent);   // smooth lofted models: see flight-models.js
+    const gl = this.gl, data = FlightModels.build(model || 'plane', body, accent, false), gear = FlightModels.gearPart(model || 'plane', body, accent);   // smooth lofted models: see flight-models.js
     const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    const entry = { buffer, count: data.length / 9, prop: null }, prop = FlightModels.propeller(model || 'plane');
+    const entry = { buffer, count: data.length / 9, prop: null, gear: null, flaps: null }, prop = FlightModels.propeller(model || 'plane'), flaps = FlightModels.flapPart(model || 'plane');
+    if (flaps) { const flapBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, flapBuffer); gl.bufferData(gl.ARRAY_BUFFER, flaps.data, gl.STATIC_DRAW); entry.flaps = { buffer: flapBuffer, count: flaps.data.length / 9, panels: flaps.panels, angles: flaps.angles }; }
+    if (gear) { const gearBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gearBuffer); gl.bufferData(gl.ARRAY_BUFFER, gear.data, gl.STATIC_DRAW); entry.gear = { buffer: gearBuffer, count: gear.data.length / 9, fold: gear.fold }; }
     if (prop) { const propBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, propBuffer); gl.bufferData(gl.ARRAY_BUFFER, prop.data, gl.STATIC_DRAW); entry.prop = { buffer: propBuffer, count: prop.data.length / 9, rotors: prop.rotors, alpha: prop.alpha, atOrigin: prop.atOrigin }; }
     this.planeCache.set(key, entry); return entry;
   };
@@ -163,7 +187,7 @@
     this.nightLevel += (this.nightTarget - this.nightLevel) * Math.min(1, step * 2.5); if (Math.abs(this.nightTarget - this.nightLevel) < 0.002) this.nightLevel = this.nightTarget;
     const night = this.nightLevel; this.fog = this.dayFog.map((v, i) => v + (this.nightFog[i] - v) * night);
     const day = [0.22 - Math.min(0.1, altitude / 9000), 0.44 - Math.min(0.2, altitude / 9000), 0.78], nightTop = [0.008, 0.016, 0.06];
-    const horizon = this.fog, top = day.map((v, i) => v + (nightTop[i] - v) * night), density = options.fog ?? 0.00011;
+    const horizon = this.fog, top = day.map((v, i) => v + (nightTop[i] - v) * night), density = options.fog ?? 0.00011 / (1 + altitude / 1500);   // the haze thins with height, so the ground and its coastline can be seen from up high
     gl.clearColor(horizon[0], horizon[1], horizon[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     // Sky: a gradient behind everything, with the horizon line following the camera's pitch.
     const pitchUp = Math.asin(Math.max(-1, Math.min(1, camera.forward[1]))), horizonLine = 0.5 - 0.5 * Math.tan(Math.max(-1.4, Math.min(1.4, pitchUp))) / Math.tan((camera.fov || 1) / 2);
@@ -171,12 +195,13 @@
     gl.uniform3fv(this.skyUniforms.uTop, top); gl.uniform3fv(this.skyUniforms.uHorizon, horizon); gl.uniform1f(this.skyUniforms.uHorizonLine, horizonLine);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer); const sa = gl.getAttribLocation(this.sky, 'aPos'); gl.enableVertexAttribArray(sa); gl.vertexAttribPointer(sa, 2, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.enable(gl.DEPTH_TEST); gl.useProgram(this.world);
-    const view = mat.look(camera.position, camera.forward, camera.up), viewProj = mat.multiply(mat.perspective(camera.fov || 1, aspect, camera.near ?? Math.min(12, 3 + altitude * 0.04), 50000), view);
+    const view = mat.look(camera.position, camera.forward, camera.up), viewProj = mat.multiply(mat.perspective(camera.fov || 1, aspect, camera.near ?? Math.min(12, 3 + altitude * 0.04), Math.min(700000, 60000 + altitude * 60)), view);
     gl.uniformMatrix4fv(this.uniforms.uViewProj, false, viewProj); gl.uniform3fv(this.uniforms.uSun, this.sun); gl.uniform3fv(this.uniforms.uFog, this.fog); gl.uniform1f(this.uniforms.uNight, night); gl.uniform1f(this.uniforms.uWindows, 1); gl.uniform3fv(this.uniforms.uCamera, camera.position); gl.uniform1f(this.uniforms.uDensity, density);
     const identity = mat.identity(), normalIdentity = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const pieces = [...this.tiles.values(), ...(this.home ? [this.home] : [])];   // the first region last, so the airport lies on top
     gl.uniformMatrix4fv(this.uniforms.uModel, false, identity); gl.uniformMatrix3fv(this.uniforms.uNormal, false, normalIdentity);
-    gl.disable(gl.DEPTH_TEST); if (this.base) { this.bindAttributes(this.base.buffer); gl.drawArrays(gl.TRIANGLES, 0, this.base.count); }
+    gl.disable(gl.DEPTH_TEST);
+    if (this.farTexture) this.drawFarGround(viewProj, camera, density, night); else if (this.base) { this.bindAttributes(this.base.buffer); gl.drawArrays(gl.TRIANGLES, 0, this.base.count); }
     for (const piece of pieces) if (piece.ground) { this.bindAttributes(piece.ground.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.ground.count); }
     gl.enable(gl.DEPTH_TEST); for (const piece of pieces) if (piece.solid) { this.bindAttributes(piece.solid.buffer); gl.drawArrays(gl.TRIANGLES, 0, piece.solid.count); }
     const see = [];
@@ -191,6 +216,27 @@
       gl.uniformMatrix4fv(this.uniforms.uModel, false, model);
       gl.uniformMatrix3fv(this.uniforms.uNormal, false, new Float32Array([rotation[0], rotation[1], rotation[2], rotation[4], rotation[5], rotation[6], rotation[8], rotation[9], rotation[10]]));
       this.bindAttributes(entry.buffer); gl.drawArrays(gl.TRIANGLES, 0, entry.count);
+      // Flaps: the panels at the trailing edge tilt down by the angle of the current notch (`plane.flapShow` eases between notches).
+      if (entry.flaps && (plane.flapShow || 0) > 0.02) {
+        const angles = entry.flaps.angles, notch = Math.min(angles.length - 1, plane.flapShow), low = Math.floor(notch), high = Math.min(angles.length - 1, low + 1), angle = (angles[low] + (angles[high] - angles[low]) * (notch - low)) * Math.PI / 180;
+        this.bindAttributes(entry.flaps.buffer);
+        for (const panel of entry.flaps.panels) {
+          const X = panel.axis, Yraw = [0, 1, 0], k = dot(X, Yraw), Y = norm([Yraw[0] - X[0] * k, Yraw[1] - X[1] * k, Yraw[2] - X[2] * k]), Z = cross(X, Y);
+          const basis = new Float32Array([X[0], X[1], X[2], 0, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, panel.origin[0], panel.origin[1], panel.origin[2], 1]);
+          const tilt = mat.rotateX(-angle), place = mat.multiply(basis, mat.multiply(tilt, mat.scale(panel.length, 1, panel.chord))), r = mat.multiply(rotation, mat.multiply(basis, tilt));
+          gl.uniformMatrix4fv(this.uniforms.uModel, false, mat.multiply(model, place));
+          gl.uniformMatrix3fv(this.uniforms.uNormal, false, new Float32Array([r[0], r[1], r[2], r[4], r[5], r[6], r[8], r[9], r[10]]));
+          gl.drawArrays(gl.TRIANGLES, 0, entry.flaps.count);
+        }
+        gl.uniformMatrix4fv(this.uniforms.uModel, false, model); this.bindAttributes(entry.buffer);
+      }
+      const down = plane.gear ?? 1;   // the retractable gear folds up into the body as it goes up
+      if (entry.gear && down > 0.04) {
+        const fold = entry.gear.fold, squash = mat.multiply(mat.translate(0, fold, 0), mat.multiply(mat.scale(1, down, 1), mat.translate(0, -fold, 0)));
+        gl.uniformMatrix4fv(this.uniforms.uModel, false, mat.multiply(model, squash)); gl.uniformMatrix3fv(this.uniforms.uNormal, false, new Float32Array([rotation[0], rotation[1], rotation[2], rotation[4], rotation[5], rotation[6], rotation[8], rotation[9], rotation[10]]));
+        this.bindAttributes(entry.gear.buffer); gl.drawArrays(gl.TRIANGLES, 0, entry.gear.count);
+        gl.uniformMatrix4fv(this.uniforms.uModel, false, model);
+      }
       if (entry.prop) {   // rotors turn about their own axis; `spin` is the angle in radians. See-through ones are drawn after everything else.
         if (entry.prop.alpha < 1) { see.push({ entry, plane, model, rotation }); continue; }
         this.drawRotors(entry, plane, model, rotation, 1);
