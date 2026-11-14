@@ -118,6 +118,24 @@
   // the shore above, so it is left out here.
   const pondsQuery = (origin, region) => `[out:json][timeout:90];(way["natural"="water"](${box(origin, region)});way["waterway"="riverbank"](${box(origin, region)});way["landuse"~"^(basin|reservoir)$"](${box(origin, region)}););out geom;rel["natural"="water"]["name"!="Lake Ontario"](${box(origin, region)});out geom(${box(origin, region)});`;
 
+  // Main roads and their bridges for the 3D view: `highway` ways of the main classes (not the small streets), with `bridge` sections raised on a
+  // deck. Tunnels are left out. Width: the `width` tag, else the lanes, else a width for the class.
+  const ROAD_WIDTH = { motorway: 10, motorway_link: 6, trunk: 9, trunk_link: 6, primary: 8, primary_link: 5.5, secondary: 7, secondary_link: 5, tertiary: 6, tertiary_link: 4.5 };
+  const ROAD_RAISE = { motorway: 12, trunk: 11, primary: 9, secondary: 8, tertiary: 7 };       // deck height of a bridge by class (metres), before layers
+  const roadsQuery = (origin, region) => `[out:json][timeout:90];way["highway"~"^(${Object.keys(ROAD_WIDTH).join('|')})$"](${box(origin, region)});out tags geom;`;
+  function parseRoads(json, toLocal) {
+    const out = [];
+    for (const e of (json && json.elements) || []) {
+      const tags = e.tags || {}, kind = tags.highway; if (e.type !== 'way' || !ROAD_WIDTH[kind] || !e.geometry || e.geometry.length < 2 || e.geometry.some(p => !p)) continue;
+      if (tags.tunnel && tags.tunnel !== 'no') continue;
+      const bridge = Boolean(tags.bridge && tags.bridge !== 'no'), layer = Number(tags.layer) || (bridge ? 1 : 0);
+      const width = Math.min(30, Math.max(3, Number(tags.width) || (Number(tags.lanes) ? Number(tags.lanes) * 3.3 : 0) || ROAD_WIDTH[kind]));
+      let points = e.geometry.map(p => toLocal(p.lat, p.lon)); if (points.length > 2) points = decimate(points, 4);
+      out.push({ id: e.id, kind, width, bridge, layer, points });
+    }
+    return out;
+  }
+
   // ---- geography ----------------------------------------------------------------------------------------------------------
   function projector(origin) {
     const k = Math.PI / 180 * EARTH, cos = Math.cos(origin.lat * Math.PI / 180);
@@ -202,14 +220,14 @@
   function runsOf(geometry) { const runs = []; let current = []; for (const p of geometry || []) { if (p) current.push(p); else { if (current.length > 1) runs.push(current); current = []; } } if (current.length > 1) runs.push(current); return runs; }
   // Lake Ontario: the sea is the whole box and the land is drawn on top of it. The mainland shore (outer ways) runs west to east
   // with the land on its north side, so it is closed along the north edge of the box; the islands (inner ways) are closed rings.
-  function parseLake(results, toLocal, origin, region) {
+  function parseLake(results, toLocal, origin, region, spacing = 25) {
     const [outerJson, innerJson] = results, b = bounds(origin, region), sw = toLocal(b.south, b.west), ne = toLocal(b.north, b.east), rect = [sw[0], sw[1], ne[0], ne[1]];
     const ways = json => ((json && json.elements) || []).filter(e => e.type === 'way' && e.geometry && e.geometry.length > 1).map(e => points(e.geometry));
     const outer = ways(outerJson);
     if (!outer.length) return null;
     const toXZ = chain => chain.map(([lat, lon]) => toLocal(lat, lon));
-    const shore = joinChains(outer).map(chain => { const line = decimate(toXZ(chain), 25); return line[0][0] > line.at(-1)[0] ? line.reverse() : line; });
-    const islands = joinChains(ways(innerJson)).map(chain => decimate(toXZ(chain), 20)).filter(ring => ring.length > 3);
+    const shore = joinChains(outer).map(chain => { const line = decimate(toXZ(chain), spacing); return line[0][0] > line.at(-1)[0] ? line.reverse() : line; });
+    const islands = joinChains(ways(innerJson)).map(chain => decimate(toXZ(chain), Math.min(20, spacing))).filter(ring => ring.length > 3);
     return { polygon: rectangle(rect), islands: [...landRings(shore, rect), ...islands] };
   }
 
@@ -275,16 +293,16 @@
     }
     return rings;
   }
-  function parseCoast(json, toLocal, origin, region) {
+  function parseCoast(json, toLocal, origin, region, spacing = 25) {
     const b = bounds(origin, region), sw = toLocal(b.south, b.west), ne = toLocal(b.north, b.east), rect = [sw[0], sw[1], ne[0], ne[1]];
     const ways = (json.elements || []).filter(e => e.type === 'way' && e.geometry && e.geometry.length > 1).map(e => points(e.geometry));
     if (!ways.length) return null;
-    const chains = joinChains(ways).map(chain => decimate(chain.map(([lat, lon]) => toLocal(lat, lon)), 25));
+    const chains = joinChains(ways).map(chain => decimate(chain.map(([lat, lon]) => toLocal(lat, lon)), spacing));
     const rings = landRings(chains, rect);
     return { polygon: rectangle(rect), islands: rings };
   }
   // `results` holds the Overpass answers to waterQueries, in order.
-  const parseWater = (results, toLocal, origin, region, code) => config(code).water === 'none' ? null : config(code).water === 'lake' ? parseLake(results, toLocal, origin, region) : parseCoast(results[0], toLocal, origin, region);
+  const parseWater = (results, toLocal, origin, region, code, spacing = 25) => config(code).water === 'none' ? null : config(code).water === 'lake' ? parseLake(results, toLocal, origin, region, spacing) : parseCoast(results[0], toLocal, origin, region, spacing);
 
   // Rings of open water from the pondsQuery answer: [{ ring: [[x, z], ...], holes: [ring, ...], box: [x0, z0, x1, z1] }].
   function parsePonds(json, toLocal) {
@@ -330,7 +348,7 @@
     return region;
   }
   // The runway is written either way round in OpenStreetMap. The landing end is the one on the side the approach comes from.
-  function buildScene({ airport, buildings, water, ponds, region }, source = 'openstreetmap', code = airport.icao) {
+  function buildScene({ airport, buildings, water, ponds, roads, region }, source = 'openstreetmap', code = airport.icao) {
     const scene_region = region || config(code).region;
     const options = config(code), runway = mainRunway(airport, code), origin = centroid(runway.nodes);
     const { toLocal, toGeo } = projector(origin);
@@ -346,7 +364,7 @@
       runway: { ref: runway.ref, width: runway.width, lit: runway.lit, points: runwayPoints, threshold, far, heading: bearing(threshold, far), length: Math.hypot(far[0] - threshold[0], far[1] - threshold[1]) },
       otherRunways: airport.runways.filter(r => r !== runway).map(r => ({ ref: r.ref, width: r.width, lit: r.lit, points: line(r.nodes) })),
       taxiways: airport.taxiways.map(t => line(t.nodes)), taxiLit: airport.taxiways.map(t => t.lit), aprons: airport.aprons.map(a => line(a.nodes)),
-      buildings: buildings || [], water: water || null, ponds: ponds || [], rect: [sw[0], sw[1], ne[0], ne[1]], tileGrid: { south: scene_region.south, west: scene_region.west }
+      buildings: buildings || [], water: water || null, ponds: ponds || [], roads: roads || [], rect: [sw[0], sw[1], ne[0], ne[1]], tileGrid: { south: scene_region.south, west: scene_region.west }
     };
   }
   // Everything is read from OpenStreetMap: the airport first (it fixes the origin), then buildings and water around it.
@@ -355,10 +373,11 @@
     let airport; try { airport = config(code).place ? placeAirport(code) : parseAirport(await fetchJson(airportQuery(code)), code); } catch (error) { if (dynamic) delete AIRPORTS[code]; throw error; }
     if (dynamic) { const o = AIRPORTS[code], middle = centroid(mainRunway(airport, code).nodes); o.label = airport.name; o.landHeading = Math.abs(middle.lat) < 30 ? 90 : 270; }
     const origin = centroid(mainRunway(airport, code).nodes), { toLocal } = projector(origin), region = regionFor(airport, code);
-    const [buildingJson, pondJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
+    const [buildingJson, pondJson, roadJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), fetchJson(roadsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
     let water = null; try { water = waterJson.some(Boolean) ? parseWater(waterJson, toLocal, origin, region, code) : null; } catch (error) { water = null; }
     let ponds = []; try { ponds = parsePonds(pondJson, toLocal); } catch (error) { ponds = []; }
-    return buildScene({ airport, buildings: parseBuildings(buildingJson, toLocal, config(code).maxBuildings), water, ponds, region }, 'openstreetmap', code);
+    let roads = []; try { roads = parseRoads(roadJson, toLocal); } catch (error) { roads = []; }
+    return buildScene({ airport, buildings: parseBuildings(buildingJson, toLocal, config(code).maxBuildings), water, ponds, roads, region }, 'openstreetmap', code);
   }
 
   // ---- geometry -----------------------------------------------------------------------------------------------------------
@@ -466,15 +485,63 @@
     const votes = [[x0 - edge, mz], [x1 + edge, mz], [mx, z0 - edge], [mx, z1 + edge]].filter(([x, z]) => world.covered(x, z)).map(([x, z]) => world.surface(x, z) === 'water');
     return votes.length > 0 && votes.filter(Boolean).length * 2 > votes.length;
   }
+  // City names for the map: OpenStreetMap `place` nodes (city, town, suburb, village ...) in the area the map shows. Zoomed out only the big
+  // places are asked for, so a continent-sized map does not ask for every village. English names are used when OpenStreetMap has them.
+  const PLACE_RANK = { city: 5, town: 4, suburb: 3, quarter: 2, village: 2, island: 1 };
+  const placeKinds = span => span >= 200000 ? 'city' : span >= 60000 ? 'city|town' : span >= 20000 ? 'city|town|suburb' : 'city|town|suburb|quarter|village';
+  // Round the box outwards to a 0.1 degree grid so the same area asks the same question (and is answered from the browser's cache).
+  function labelBox(box) { return { south: Math.floor(box.south * 10) / 10, west: Math.floor(box.west * 10) / 10, north: Math.ceil(box.north * 10) / 10, east: Math.ceil(box.east * 10) / 10 }; }
+  const labelsQuery = (box, kinds) => `[out:json][timeout:25];node["place"~"^(${kinds})$"]["name"](${box.south.toFixed(1)},${box.west.toFixed(1)},${box.north.toFixed(1)},${box.east.toFixed(1)});out;`;
+  function parseLabels(json, toLocal) {
+    const seen = new Set(), out = [];
+    for (const e of (json && json.elements) || []) {
+      const tags = e.tags || {}, name = tags['name:en'] || tags.int_name || tags.name; if (!name || !Number.isFinite(e.lat) || !PLACE_RANK[tags.place]) continue;
+      const key = `${name}|${tags.place}`; if (seen.has(key)) continue; seen.add(key);
+      const [x, z] = toLocal(e.lat, e.lon); out.push({ name, kind: tags.place, rank: PLACE_RANK[tags.place], population: Number(tags.population) || 0, x, z });
+    }
+    return out.sort((a, b) => b.rank - a.rank || b.population - a.population);
+  }
+  // The map zoomed far out (very high speed or height) shows the coastline only, from a world land layer: Natural Earth 1:50m land (public
+  // domain) as a TopoJSON file, fetched once. It is one small file, so the far-out map is never empty, and there are no map cells to wait for.
+  const LAND_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-50m.json';
+  // Decode TopoJSON (delta-encoded arcs with a transform) into polygons: [[ring, hole, ...], ...], each ring a flat [lon, lat, lon, lat, ...].
+  function landFromTopology(topology) {
+    const { scale, translate } = topology.transform || { scale: [1, 1], translate: [0, 0] };
+    const arcs = (topology.arcs || []).map(arc => { let x = 0, y = 0; return arc.map(([dx, dy]) => { x += dx; y += dy; return [x * scale[0] + translate[0], y * scale[1] + translate[1]]; }); });
+    const arcPoints = index => index >= 0 ? arcs[index] : [...arcs[~index]].reverse();
+    const ring = indexes => { const points = []; for (const index of indexes) { const part = arcPoints(index); for (let i = points.length ? 1 : 0; i < part.length; i++) points.push(part[i]); } return Float64Array.from(points.flat()); };
+    const polygons = [];
+    const visit = geometry => {
+      if (geometry.type === 'GeometryCollection') geometry.geometries.forEach(visit);
+      else if (geometry.type === 'Polygon') polygons.push(geometry.arcs.map(ring));
+      else if (geometry.type === 'MultiPolygon') for (const polygon of geometry.arcs) polygons.push(polygon.map(ring));
+    };
+    for (const object of Object.values(topology.objects || {})) visit(object);
+    return polygons;
+  }
+  // Land polygons near `origin` (within `radius` degrees) in the scene's local metres, each with its bounding box, ready to draw.
+  function projectLand(polygons, toLocal, origin, radius = 7) {
+    const out = [];
+    for (const rings of polygons) {
+      const outer = rings[0]; let lo = Infinity, hi = -Infinity, west = Infinity, east = -Infinity;
+      for (let i = 0; i < outer.length; i += 2) { west = Math.min(west, outer[i]); east = Math.max(east, outer[i]); lo = Math.min(lo, outer[i + 1]); hi = Math.max(hi, outer[i + 1]); }
+      if (east < origin.lon - radius || west > origin.lon + radius || hi < origin.lat - radius || lo > origin.lat + radius) continue;
+      const local = rings.map(r => { const path = new Float32Array(r.length); for (let i = 0; i < r.length; i += 2) { const [x, z] = toLocal(r[i + 1], r[i]); path[i] = x; path[i + 1] = z; } return path; });
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity; for (let i = 0; i < local[0].length; i += 2) { x0 = Math.min(x0, local[0][i]); x1 = Math.max(x1, local[0][i]); z0 = Math.min(z0, local[0][i + 1]); z1 = Math.max(z1, local[0][i + 1]); }
+      out.push({ rings: local, box: [x0, z0, x1, z1] });
+    }
+    return out;
+  }
   async function loadTile(fetchJson, scene, world, i, j) {
     const region = tileRegion(scene, i, j), rect = tileRect(scene, i, j), { origin, code, toLocal } = scene;
-    const [buildingJson, pondJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
+    const [buildingJson, pondJson, roadJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), fetchJson(roadsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
     let water = null; try { water = waterJson.some(Boolean) ? parseWater(waterJson, toLocal, origin, region, code) : null; } catch (error) { water = null; }
     if (!water && inheritsSea(world, rect)) water = { polygon: rectangle(rect), islands: [] };
     let ponds = []; try { ponds = parsePonds(pondJson, toLocal); } catch (error) { ponds = []; }
     const mid = [(rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2], buildings = parseBuildings(buildingJson, toLocal, Infinity);
     buildings.sort((a, b) => Math.hypot(a.ring[0] - mid[0], a.ring[1] - mid[1]) - Math.hypot(b.ring[0] - mid[0], b.ring[1] - mid[1])); buildings.length = Math.min(buildings.length, TILE_BUILDINGS);
-    return { key: tileKey(i, j), i, j, rect, buildings, water, ponds };
+    let roads = []; try { roads = parseRoads(roadJson, toLocal); } catch (error) { roads = []; }
+    return { key: tileKey(i, j), i, j, rect, buildings, water, ponds, roads };
   }
 
   // The plane on final approach for the runway: before the threshold, lined up with the centre line.
@@ -590,6 +657,47 @@
     return out;
   }
 
+  // ---- roads and bridges ------------------------------------------------------------------------------------------------------------
+  const ROAD = { surface: [0.27, 0.28, 0.3], marking: [0.88, 0.88, 0.8], deck: [0.58, 0.58, 0.57], rail: [0.7, 0.7, 0.69], pillar: [0.52, 0.52, 0.5] };
+  const smooth = t => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+  // Roads on the ground are flat ribbons (with a dashed centre line on the wide ones); bridges are decks raised on ramps, with side rails and pillars.
+  function roadParts(roads) {
+    const flat = [], dashes = [], solid = [], s = writer(solid);
+    const quad = (a, b, c, d, n, color) => { s.vertex(...a, ...n, color); s.vertex(...b, ...n, color); s.vertex(...c, ...n, color); s.vertex(...a, ...n, color); s.vertex(...c, ...n, color); s.vertex(...d, ...n, color); };
+    for (const road of roads) {
+      const pts = road.points; if (pts.length < 2) continue;
+      let length = 0; for (let i = 0; i + 1 < pts.length; i++) length += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      if (!road.bridge || length < 12) {
+        flat.push(...ribbon(pts, road.width));
+        if (road.width >= 8) for (const [x, z, , i] of along(pts, 14, 0)) { const next = pts[Math.min(i + 1, pts.length - 1)], dx = next[0] - pts[i][0], dz = next[1] - pts[i][1], l = Math.hypot(dx, dz) || 1; dashes.push(...ribbon([[x, z], [x + dx / l * 5, z + dz / l * 5]], 0.35)); }
+        continue;
+      }
+      // a bridge: resample every few metres, with a height profile that ramps up from the ends
+      const raise = (ROAD_RAISE[road.kind.replace('_link', '')] || 8) * (1 + 0.3 * Math.max(0, road.layer - 1)), top = length < 40 ? 2.5 : raise, ramp = Math.max(10, Math.min(90, length * 0.25));
+      const samples = []; let travelled = 0;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const [x1, z1] = pts[i], [x2, z2] = pts[i + 1], seg = Math.hypot(x2 - x1, z2 - z1), steps = Math.max(1, Math.ceil(seg / 12));
+        for (let k = (i === 0 ? 0 : 1); k <= steps; k++) { const t = k / steps; samples.push({ x: x1 + (x2 - x1) * t, z: z1 + (z2 - z1) * t, s: travelled + seg * t, dx: (x2 - x1) / (seg || 1), dz: (z2 - z1) / (seg || 1) }); }
+        travelled += seg;
+      }
+      for (const p of samples) { p.h = top * smooth(Math.min(p.s, length - p.s) / ramp); const half = road.width / 2; p.l = [p.x - p.dz * half, p.z + p.dx * half]; p.r = [p.x + p.dz * half, p.z - p.dx * half]; }
+      for (let i = 0; i + 1 < samples.length; i++) {
+        const a = samples[i], b = samples[i + 1], thick = 1.1;
+        quad([a.l[0], a.h + 0.05, a.l[1]], [a.r[0], a.h + 0.05, a.r[1]], [b.r[0], b.h + 0.05, b.r[1]], [b.l[0], b.h + 0.05, b.l[1]], [0, 1, 0], ROAD.surface);          // the road
+        quad([a.l[0], a.h - thick, a.l[1]], [a.r[0], a.h - thick, a.r[1]], [b.r[0], b.h - thick, b.r[1]], [b.l[0], b.h - thick, b.l[1]], [0, -1, 0], ROAD.deck);        // underside
+        for (const [sideA, sideB, n] of [[a.l, b.l, [-a.dz, 0, a.dx]], [a.r, b.r, [a.dz, 0, -a.dx]]]) {
+          quad([sideA[0], a.h - thick, sideA[1]], [sideB[0], b.h - thick, sideB[1]], [sideB[0], b.h + 0.05, sideB[1]], [sideA[0], a.h + 0.05, sideA[1]], n, ROAD.deck);   // the edge of the deck
+          quad([sideA[0], a.h + 0.05, sideA[1]], [sideB[0], b.h + 0.05, sideB[1]], [sideB[0], b.h + 1.0, sideB[1]], [sideA[0], a.h + 1.0, sideA[1]], n, ROAD.rail);       // the side rail
+        }
+      }
+      for (const p of samples) if (p.h > 3.5 && Math.round(p.s / 12) % 4 === 0) {   // pillars every 48 m under the raised part
+        const w = 0.9, x = p.x, z = p.z, y0 = -0.4, y1 = p.h - 1.0;
+        for (const [ax, az, bx, bz, n] of [[x - w, z - w, x + w, z - w, [0, 0, -1]], [x + w, z - w, x + w, z + w, [1, 0, 0]], [x + w, z + w, x - w, z + w, [0, 0, 1]], [x - w, z + w, x - w, z - w, [-1, 0, 0]]]) quad([ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az], n, ROAD.pillar);
+      }
+    }
+    return { flat, dashes, solid };
+  }
+
   // ---- meshes -------------------------------------------------------------------------------------------------------------
   // Interleaved vertices: x, y, z, normal x, y, z, red, green, blue. Face culling is off, so winding does not matter.
   const COLORS = { land: [0.36, 0.5, 0.3], water: [0.13, 0.3, 0.48], island: [0.4, 0.52, 0.32], apron: [0.46, 0.47, 0.5], taxiway: [0.4, 0.41, 0.44], runway: [0.2, 0.21, 0.23], paint: [0.92, 0.92, 0.88] };
@@ -603,6 +711,7 @@
     const ground = [], solid = [], g = writer(ground), s = writer(solid);
     if (tile.water) { g.flat(triangulate(tile.water.polygon), -0.4, COLORS.water); for (const land of tile.water.islands) g.flat(triangulate(land), -0.3, COLORS.island); }
     for (const pond of tile.ponds || []) { g.flat(triangulate(pond.ring), -0.2, COLORS.water); for (const hole of pond.holes) g.flat(triangulate(hole), -0.1, COLORS.island); }
+    if (tile.roads && tile.roads.length) { const roads = roadParts(tile.roads); g.flat(roads.flat, 0.0, ROAD.surface); g.flat(roads.dashes, 0.01, ROAD.marking); for (const v of roads.solid) solid.push(v); }   // roads on the ground, bridges raised
     for (const b of tile.buildings) {
       const ring = []; for (let i = 0; i < b.ring.length; i += 2) ring.push([b.ring[i], b.ring[i + 1]]);
       const shade = [b.color[0] * 0.92, b.color[1] * 0.92, b.color[2] * 0.92];
@@ -619,7 +728,7 @@
   }
   // The first region: land everywhere, its sea, open water and buildings, then the airport's aprons, taxiways, runways and markings.
   function meshParts(scene) {
-    const home = tileParts({ water: scene.water, ponds: scene.ponds, buildings: scene.buildings }), land = [], airport = [], l = writer(land), g = writer(airport), big = 40000;
+    const home = tileParts({ water: scene.water, ponds: scene.ponds, buildings: scene.buildings, roads: scene.roads }), land = [], airport = [], l = writer(land), g = writer(airport), big = 40000;
     l.flat([-big, -big, big, -big, big, big, -big, -big, big, big, -big, big], -0.5, COLORS.land);
     for (const apron of scene.aprons) g.flat(triangulate(apron), 0.02, COLORS.apron);
     for (const taxiway of scene.taxiways) g.flat(ribbon(taxiway, 15), 0.04, COLORS.taxiway);
@@ -632,5 +741,5 @@
   // Everything in one array (ground first), for tests and simple uses.
   function buildMesh(scene) { const { base, ground, solid } = meshParts(scene), all = new Float32Array(base.length + ground.length + solid.length); all.set(base); all.set(ground, base.length); all.set(solid, base.length + ground.length); return all; }
 
-  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, FALLBACK_AIRPORT, PLACE_NAMES, cleanText, searchPlaceUrl, parsePlaces, airportsQuery, parseAirportElements, mergeSearch, buildLights, obstructionLights, papiLights, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
+  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, FALLBACK_AIRPORT, PLACE_NAMES, cleanText, searchPlaceUrl, parsePlaces, airportsQuery, parseAirportElements, mergeSearch, roadsQuery, parseRoads, roadParts, placeKinds, labelBox, labelsQuery, parseLabels, LAND_URL, landFromTopology, projectLand, buildLights, obstructionLights, papiLights, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
 });
