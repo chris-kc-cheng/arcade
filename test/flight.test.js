@@ -754,11 +754,11 @@ test('the map scales itself with speed and height, and far out it draws only the
   assert.equal(land.length, 1); assert.ok(land[0].box[2] > 9000 && land[0].box[0] < -9000, 'projected into local metres'); assert.equal(OSM.projectLand(polygons, scene.toLocal, scene.origin).length, 0, 'land far from the airport is left out');
   assert.match(OSM.LAND_URL, /^https:\/\/cdn\.jsdelivr\.net\/npm\/world-atlas@[\d.]+\/land-50m\.json$/);
   const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8'), html = fs.readFileSync(path.join(__dirname, '../public/flight.html'), 'utf8');
-  assert.match(js, /ZOOMS = \[2000, 6000, 20000, 60000, 200000, 600000\]/); assert.match(js, /plane\.speed \* \(scale \|\| 1\) \* 45 \/ 0\.5, plane\.y \* 8/); assert.match(js, /loadWorldLand\(\)/); assert.match(js, /c\.fill\('evenodd'\)/); assert.doesNotMatch(js, /streamCoarse|loadCoarse/); assert.match(js, /coastOnly = span >= COAST_ONLY/); assert.match(js, /if \(!coastOnly && span <= 20000\)/); assert.match(js, /if \(!coastOnly\) for \(const pond/);
+  assert.match(js, /ZOOMS = \[2000, 6000, 20000, 60000, 200000, 600000\]/); assert.match(js, /plane\.speed \* \(scale \|\| 1\) \* 45 \/ 0\.5, plane\.y \* ALTITUDE_SPAN/); assert.match(js, /ALTITUDE_SPAN = 0\.8;/); assert.match(js, /loadWorldLand\(\)/); assert.match(js, /c\.fill\('evenodd'\)/); assert.doesNotMatch(js, /streamCoarse|loadCoarse/); assert.match(js, /coastOnly = span >= COAST_ONLY/); assert.match(js, /if \(!coastOnly && span <= 20000\)/); assert.match(js, /if \(!coastOnly\) for \(const pond/);
   assert.match(html, /id="zoomAuto"[^>]*aria-pressed="true"/); assert.match(js, /setAutoMap\(false\); zoom = Math\.max\(0, zoom - 1\)/);
   // the span needed: 45 s of travel fits in half the map, and the view from the height
-  const needed = (speed, scale, altitude) => Math.max(6000, speed * scale * 45 / 0.5, altitude * 8), zoom = value => [2000, 6000, 20000, 60000, 200000, 600000].find(v => v >= value) || 600000;
-  assert.equal(zoom(needed(50, 1, 500)), 6000, 'a Cessna on approach keeps the close map'); assert.equal(zoom(needed(100, 1, 6000)), 60000, 'an airliner at cruise height zooms out'); assert.ok(zoom(needed(100, 100, 6000)) >= 600000, 'at 100x speed it zooms far out');
+  const needed = (speed, scale, altitude) => Math.max(6000, speed * scale * 45 / 0.5, altitude * 0.8), zoom = value => [2000, 6000, 20000, 60000, 200000, 600000].find(v => v >= value) || 600000;
+  assert.equal(zoom(needed(50, 1, 500)), 6000, 'a Cessna on approach keeps the close map'); assert.equal(zoom(needed(100, 1, 6000)), 20000, 'an airliner at cruise (speed 100 m/s) uses the 20 km map; the height alone does not zoom it out until about 10 times higher'); assert.equal(zoom(needed(0, 1, 30000)), 60000, 'only very high up (30 km) does the height alone zoom out to the coastline map'); assert.ok(zoom(needed(100, 100, 6000)) >= 600000, 'at 100x speed it zooms far out');
 });
 
 test('the map shows city names from OpenStreetMap place nodes: big places first, English names, and only big places when zoomed out', () => {
@@ -826,4 +826,38 @@ test('main roads and bridges are drawn in the 3D view: ground ribbons with dashe
   // tiles and the airport scene carry their roads into their meshes
   const tile = { water: null, ponds: [], buildings: [], roads }, mesh = OSM.tileParts(tile); assert.ok(mesh.ground.length > 0 && mesh.solid.length > 0, 'a tile with roads has ground ribbons and bridge solids'); assert.equal(OSM.tileParts({ water: null, ponds: [], buildings: [] }).solid.length, 0);
   assert.ok(OSM.fallbackScene('CYTZ').roads.length === 0, 'the offline sketch has no roads');
+});
+
+test('a bridge that OpenStreetMap splits into several ways is one deck: no hump on every piece', () => {
+  const heightAt = (roads, x) => { const solid = OSM.roadParts(roads).solid; let low = Infinity, high = -Infinity; for (let i = 0; i < solid.length; i += 9) if (Math.abs(solid[i]) > x - 3 && Math.abs(solid[i]) < x + 3 && solid[i + 4] > 0.99) { low = Math.min(low, solid[i + 1]); high = Math.max(high, solid[i + 1]); } return [low, high]; };
+  const piece = (id, a, b) => ({ id, kind: 'trunk', width: 9, bridge: true, layer: 1, points: [[a, 0], [b, 0]] });
+  const split = [piece(1, 0, 150), piece(2, 150, 320), piece(3, 320, 470), piece(4, 470, 700)], whole = [{ ...piece(0, 0, 150), points: [[0, 0], [150, 0], [320, 0], [470, 0], [700, 0]] }];
+  const [lowAtJoin] = heightAt(split, 320); assert.ok(lowAtJoin > 8, `at the join between two pieces the deck is still up (${lowAtJoin.toFixed(1)} m)`);
+  for (const x of [150, 320, 470]) { const a = heightAt(split, x), b = heightAt(whole, x); near(a[0], b[0], 0.6, `the split bridge is as high as the whole one at ${x} m`); }
+  const [ground] = heightAt(split, 1); assert.ok(ground < 2, `the ends still come down to the road (${ground.toFixed(1)} m)`);
+  let maxStep = 0, previous = null; for (let x = 8; x < 700; x += 12) { const [h] = heightAt(split, x); if (Number.isFinite(h)) { if (previous !== null) maxStep = Math.max(maxStep, Math.abs(h - previous)); previous = h; } }
+  assert.ok(maxStep < 2.5, `no jumps in the height along the bridge (largest step ${maxStep.toFixed(2)} m)`);
+  const apart = [piece(5, 0, 100), piece(6, 400, 500)], [mid] = heightAt(apart, 250); assert.equal(mid, Infinity, 'bridges that do not touch stay separate');
+});
+
+test('after flying fast or high, the ground under a slower, lower plane loads again at once: stale requests no longer block the queue', () => {
+  const pending = new Map([['a', { x: 40000, z: 0, stale: false }], ['b', { x: 38000, z: 3000, stale: false }], ['c', { x: 500, z: 800, stale: false }], ['d', { x: -12000, z: 4000, stale: false }]]);
+  assert.equal(OSM.activePending(pending, 0, 0, 22000), 2, 'only the two cells near the plane still count'); assert.equal(pending.get('a').stale, true); assert.equal(pending.get('c').stale, false);
+  assert.equal(OSM.activePending(pending, 39000, 0, 22000), 2, 'and if the plane is out there they are the ones that count (the far ones were not wrongly dropped)'); assert.equal(pending.get('a').stale, false); assert.equal(pending.get('c').stale, true);
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8');
+  assert.match(js, /OSM\.activePending\(streaming\.pending, plane\.x, plane\.z, 22000\)/); assert.match(js, /\(close \? 6 : 3\)/); assert.match(js, /scale >= 50 \? 12000/); assert.match(js, /if \(value < scale\) streaming\.last = 0/); assert.match(js, /performance\.now\(\) \+ 6000/);
+  assert.match(js, /entry\.stale && Math\.hypot\(entry\.x - plane\.x, entry\.z - plane\.z\) > 22000/);
+});
+
+test('the minimap is filled everywhere: the world land layer is its ground at every scale, with loaded cells painted over it', () => {
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8');
+  assert.ok(js.includes("    if (landLocal) {\n      c.fillStyle = css(COLORS.water); c.fillRect(0, 0, size, size);") || js.includes("    if (landLocal) {\r\n      c.fillStyle = css(COLORS.water); c.fillRect(0, 0, size, size);"), 'sea everywhere, then the land, at every scale');
+  assert.ok(!js.includes('if (coastOnly && landLocal) {'));
+  assert.ok(js.includes("this cell's own ground over the coarse layer")); assert.ok(js.includes('for (const tile of coastOnly && landLocal ? [] : tiles)'));
+});
+
+test('every respawn, from the top bar button, the R key, the crash screen or a new airport, starts at 1x speed', () => {
+  const js = fs.readFileSync(path.join(__dirname, '../public/flight.js'), 'utf8');
+  assert.match(js, /function respawn\(notify = true\) \{\r?\n    setAutopilot\(false\); setScale\(1\);/);
+  assert.match(js, /\$\('#reset'\)\.onclick = \(\) => \{ if \(state !== 'loading'\) respawn\(\); \}/); assert.match(js, /\$\('#again'\)\.onclick = \(\) => respawn\(\)/);
 });

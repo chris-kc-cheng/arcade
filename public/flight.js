@@ -4,7 +4,7 @@
   const P = FlightPhysics, OSM = FlightOSM, R = FlightRender;
   const clientId = (() => { let id = sessionStorage.getItem('arcade-client'); if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('arcade-client', id); } return id; })();
   const SCALES = [1, 2, 5, 10, 50, 100, 500, 1000], Airports = FlightAirports, FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-  const streaming = { pending: new Map(), failed: new Map(), last: 0 }, ZOOMS = [2000, 6000, 20000, 60000, 200000, 600000], FLAPS = [0, 10, 20, 30], COAST_ONLY = 60000;   // from this span up the map draws the coastline only
+  const streaming = { pending: new Map(), failed: new Map(), last: 0 }, ZOOMS = [2000, 6000, 20000, 60000, 200000, 600000], FLAPS = [0, 10, 20, 30], COAST_ONLY = 60000, ALTITUDE_SPAN = 0.8;   // from COAST_ONLY up the map draws the coastline only; the map zooms out for height at 0.8 m of span per metre (it was 8: the height at which it goes low resolution is 10 times higher)
   let autoMap = true, zoomWish = { index: 1, since: 0 }, worldLand = null, landLocal = null;
   const labels = { items: [], box: null, kinds: '', pending: false, at: 0 };   // city names for the map   // the world land layer, and the part of it near the airport in local metres
   let route = null, night = false, ap = { on: false, heading: 0, alt: 0, memo: {}, phase: '', flapAt: 0, km: 0 }, spinSelf = 0, crashedFor = 0, look = { yaw: 0, pitch: 0 }, zoom = 1, mapAt = 0, hudRead = null, hudAt = 0;
@@ -69,7 +69,7 @@
 
   // ---- the plane -------------------------------------------------------------------------------------------------------------
   function respawn(notify = true) {
-    setAutopilot(false);
+    setAutopilot(false); setScale(1);   // a respawn (the RESPAWN button, R, or a new airport) always starts at normal speed
     const a = OSM.finalApproach(scene);
     const routed = Boolean(route && route.active && !route.swapped && !scene.place);   // a flight starts on the runway; anything else (or after the swap) is a landing
     if (!routed) route = null;
@@ -107,7 +107,7 @@
   const keymap = () => flightMode === 'drone' ? DRONE_KEYMAP : KEYMAP;
   const held = action => [...keys].some(code => keymap()[code] === action);
   // The simulation speed: arrows step through 1, 2, 5, 10, 50, 100, 500 and 1000 times (keys [ and ], or , and .; keys 1 to 8 choose directly).
-  function setScale(value) { scale = value; $('#speedValue').textContent = `${value}×`; }
+  function setScale(value) { if (value < scale) streaming.last = 0; scale = value; $('#speedValue').textContent = `${value}×`; }   // slowing down: look at the ground under you again at once
   const stepScale = direction => setScale(SCALES[Math.max(0, Math.min(SCALES.length - 1, SCALES.indexOf(scale) + direction))]);
   // Night mode (N): dark sky and haze, lit windows, airport lights, blinking obstruction lights on towers, and aircraft lights.
   function setNight(on) { night = Boolean(on); renderer?.setNight(night); $('#night').setAttribute('aria-pressed', String(night)); try { localStorage.setItem('flight-night', night ? '1' : '0'); } catch { /* optional */ } }
@@ -462,23 +462,24 @@
     // What to have ready: the ground around the plane, everything on the line ahead (as far as the plane will fly in the next
     // minute of simulated time, and as far as the view reaches), a fan to each side of the nose, and the whole area the map shows.
     const heading = plane.heading, fx = Math.sin(heading), fz = Math.cos(heading), minute = plane.speed * 60 * scale;
-    const reach = Math.min(40000, Math.max(12000, minute)), wanted = [[0, 0]];
+    const reach = scale >= 50 ? 12000 : Math.min(40000, Math.max(12000, minute)), wanted = [[0, 0]];   // very fast: only the ground close ahead is worth reading
     for (let k = 0; k < 8; k++) wanted.push([Math.cos(k * Math.PI / 4) * 3200, Math.sin(k * Math.PI / 4) * 3200]);
     for (let d = 2500; d <= reach; d += 2500) { wanted.push([fx * d, fz * d]); if (d <= 15000) for (const turn of [-0.45, 0.45]) wanted.push([Math.sin(heading + turn) * d, Math.cos(heading + turn) * d]); }
     const span = Math.min(ZOOMS[zoom], 20000) / 2; for (const dx of [-span, 0, span]) for (const dz of [-span, 0, span]) wanted.push([dx, dz]);   // far out only coastline cells are read (below)
     wanted.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
-    const token = loadingToken;
+    let started = 0; const token = loadingToken, active = OSM.activePending(streaming.pending, plane.x, plane.z, 22000);   // cells asked for long ago, far behind now, no longer hold the queue
     for (const [dx, dz] of wanted) {
-      const x = plane.x + dx, z = plane.z + dz;
-      if (streaming.pending.size >= 3) break;
+      const x = plane.x + dx, z = plane.z + dz, close = Math.hypot(dx, dz) <= 6000;
+      if (active + started >= (close ? 6 : 3)) continue;   // the ground around you may use a few more at once than the ground far ahead
       if (world.covered(x, z)) continue;
       const [i, j] = OSM.tileCell(scene, x, z), key = OSM.tileKey(i, j);
       if (streaming.pending.has(key) || world.tiles.has(key) || (streaming.failed.get(key) || 0) > now) continue;
-      streaming.pending.set(key, true);
+      { const rect = OSM.tileRect(scene, i, j); streaming.pending.set(key, { x: (rect[0] + rect[2]) / 2, z: (rect[1] + rect[3]) / 2, stale: false }); started++; }
       OSM.loadTile(fetchOverpass, scene, world, i, j).then(tile => {
-        streaming.pending.delete(key); if (token !== loadingToken) return;
+        const entry = streaming.pending.get(key); streaming.pending.delete(key); if (token !== loadingToken) return;
+        if (entry && entry.stale && Math.hypot(entry.x - plane.x, entry.z - plane.z) > 22000) return;   // it arrived after the plane had left: it is cached, and read again if you come back
         world.addTile(tile); const mesh = OSM.tileParts(tile); renderer.setTile(tile.key, mesh.ground, mesh.solid); renderer.setLights(tile.key, new Float32Array(OSM.obstructionLights(tile.buildings))); evictTiles();
-      }).catch(error => { streaming.pending.delete(key); streaming.failed.set(key, performance.now() + 20000); console.warn('More map could not be read:', error); });
+      }).catch(error => { streaming.pending.delete(key); streaming.failed.set(key, performance.now() + 6000); console.warn('More map could not be read:', error); });
     }
   }
   // The zoomed-out map's land: the world land layer (Natural Earth, one small file, cached in the browser), read once in the background and
@@ -528,7 +529,7 @@
     // Automatic scale: the span has to hold about 45 s of travel at the current simulation speed (and the view from this height), so the map
     // zooms out at once when you speed up or climb and back in only after a few seconds, to avoid flicker.
     if (autoMap) {
-      const need = Math.max(6000, plane.speed * (scale || 1) * 45 / 0.5, plane.y * 8), wanted = Math.max(0, ZOOMS.findIndex(value => value >= need) < 0 ? ZOOMS.length - 1 : ZOOMS.findIndex(value => value >= need)), nowMs = performance.now();
+      const need = Math.max(6000, plane.speed * (scale || 1) * 45 / 0.5, plane.y * ALTITUDE_SPAN), wanted = Math.max(0, ZOOMS.findIndex(value => value >= need) < 0 ? ZOOMS.length - 1 : ZOOMS.findIndex(value => value >= need)), nowMs = performance.now();
       if (wanted > zoom) { zoom = wanted; zoomWish = { index: wanted, since: nowMs }; } else if (wanted < zoom) { if (zoomWish.index !== wanted) zoomWish = { index: wanted, since: nowMs }; if (nowMs - zoomWish.since > 3000) zoom = wanted; } else zoomWish = { index: wanted, since: nowMs };
     }
     const c = mapContext, span = ZOOMS[zoom], k = size / span, half = size / 2, coastOnly = span >= COAST_ONLY;
@@ -541,7 +542,9 @@
     const near = box => box[2] >= view[0] && box[0] <= view[2] && box[3] >= view[1] && box[1] <= view[3];
     const trace = ring => { c.moveTo(px(ring[0][0]), py(ring[0][1])); for (let i = 1; i < ring.length; i++) c.lineTo(px(ring[i][0]), py(ring[i][1])); c.closePath(); };
     const tiles = [...world.tiles.values()].sort((a, b) => (a === world.home) - (b === world.home));
-    if (coastOnly && landLocal) {   // far out: sea everywhere, then the land from the world layer (points closer than a pixel are skipped)
+    // The world land layer is the map's ground at every scale, so there is never an empty green square: sea everywhere, then the land from it (points
+    // closer than a pixel are skipped). The detailed scenery that has loaded is drawn over it, each cell painting its own ground first.
+    if (landLocal) {
       c.fillStyle = css(COLORS.water); c.fillRect(0, 0, size, size); c.fillStyle = css(COLORS.island); c.beginPath();
       for (const polygon of landLocal) if (near(polygon.box)) for (const ring of polygon.rings) {
         let lastX = NaN, lastY = NaN, first = true;
@@ -551,6 +554,7 @@
       c.fill('evenodd');
     }
     for (const tile of coastOnly && landLocal ? [] : tiles) {
+      if (landLocal && tile.rect) { const [rx0, rz0, rx1, rz1] = tile.rect; c.fillStyle = css(COLORS.island); c.fillRect(px(rx0), py(rz1), (rx1 - rx0) * k + 0.5, (rz1 - rz0) * k + 0.5); }   // this cell's own ground over the coarse layer
       if (tile.water) {
         const [x0, z0, x1, z1] = tile.waterRect || tile.rect; c.fillStyle = css(COLORS.water); c.fillRect(px(x0), py(z1), (x1 - x0) * k, (z1 - z0) * k);
         c.fillStyle = css(COLORS.island); c.beginPath(); for (const land of tile.water.islands) trace(land); c.fill();

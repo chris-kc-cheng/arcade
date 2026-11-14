@@ -532,6 +532,13 @@
     }
     return out;
   }
+  // Cells that were asked for while the plane was fast or high may now be far behind it. They are marked stale and no longer count against the
+  // few cells that may be read at once, so the ground under a slower, lower plane is not kept waiting behind them. Returns how many are still wanted.
+  function activePending(pending, x, z, limit) {
+    let active = 0;
+    for (const entry of pending.values()) { entry.stale = Math.hypot(entry.x - x, entry.z - z) > limit; if (!entry.stale) active++; }
+    return active;
+  }
   async function loadTile(fetchJson, scene, world, i, j) {
     const region = tileRegion(scene, i, j), rect = tileRect(scene, i, j), { origin, code, toLocal } = scene;
     const [buildingJson, pondJson, roadJson, ...waterJson] = await Promise.all([fetchJson(buildingsQuery(origin, region)), fetchJson(pondsQuery(origin, region)).catch(() => null), fetchJson(roadsQuery(origin, region)).catch(() => null), ...waterQueries(origin, region, code).map(query => fetchJson(query).catch(() => null))]);
@@ -664,7 +671,18 @@
   function roadParts(roads) {
     const flat = [], dashes = [], solid = [], s = writer(solid);
     const quad = (a, b, c, d, n, color) => { s.vertex(...a, ...n, color); s.vertex(...b, ...n, color); s.vertex(...c, ...n, color); s.vertex(...a, ...n, color); s.vertex(...c, ...n, color); s.vertex(...d, ...n, color); };
-    for (const road of roads) {
+    // OpenStreetMap often splits one long bridge into many ways: those that share an end are joined into one bridge first, so it has one deck
+    // with ramps at its two ends only, not a hump on every piece.
+    const lengthOf = pts => { let l = 0; for (let i = 0; i + 1 < pts.length; i++) l += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); return l; };
+    const bridges = roads.filter(r => r.bridge && r.points.length >= 2), parent = bridges.map((_, i) => i), find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const ends = new Map(); bridges.forEach((r, i) => { for (const p of [r.points[0], r.points.at(-1)]) { const key = `${p[0].toFixed(1)},${p[1].toFixed(1)}`; if (ends.has(key)) parent[find(i)] = find(ends.get(key)); else ends.set(key, i); } });
+    const groups = new Map(); bridges.forEach((r, i) => { const key = find(i); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(r); });
+    const merged = [];
+    for (const members of groups.values()) {
+      const width = Math.max(...members.map(r => r.width)), layer = Math.max(...members.map(r => r.layer)), kind = members.reduce((best, r) => ((ROAD_RAISE[r.kind.replace('_link', '')] || 8) > (ROAD_RAISE[best.replace('_link', '')] || 8) ? r.kind : best), members[0].kind);
+      for (const chain of joinChains(members.map(r => r.points))) merged.push({ kind, width, layer, bridge: true, points: chain });
+    }
+    for (const road of [...roads.filter(r => !r.bridge), ...merged]) {
       const pts = road.points; if (pts.length < 2) continue;
       let length = 0; for (let i = 0; i + 1 < pts.length; i++) length += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
       if (!road.bridge || length < 12) {
@@ -741,5 +759,5 @@
   // Everything in one array (ground first), for tests and simple uses.
   function buildMesh(scene) { const { base, ground, solid } = meshParts(scene), all = new Float32Array(base.length + ground.length + solid.length); all.set(base); all.set(ground, base.length); all.set(solid, base.length + ground.length); return all; }
 
-  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, FALLBACK_AIRPORT, PLACE_NAMES, cleanText, searchPlaceUrl, parsePlaces, airportsQuery, parseAirportElements, mergeSearch, roadsQuery, parseRoads, roadParts, placeKinds, labelBox, labelsQuery, parseLabels, LAND_URL, landFromTopology, projectLand, buildLights, obstructionLights, papiLights, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
+  return { AIRPORTS, DEFAULT_AIRPORT, MIRRORS, airportQuery, buildingsQuery, waterQueries, regionFor, landingEnds, projector, bearing, joinChains, parseAirport, mainRunway, parseBuildings, parseWater, parseLake, parseCoast, landRings, buildingHeight, buildScene, load, FALLBACK_AIRPORT, PLACE_NAMES, cleanText, searchPlaceUrl, parsePlaces, airportsQuery, parseAirportElements, mergeSearch, activePending, roadsQuery, parseRoads, roadParts, placeKinds, labelBox, labelsQuery, parseLabels, LAND_URL, landFromTopology, projectLand, buildLights, obstructionLights, papiLights, searchUrl, parseSearch, enrichQuery, applyTags, ALIASES, SUGGESTIONS, resolveCode, inside, triangulate, ribbon, createWorld, finalApproach, fallbackScene, buildMesh, meshParts, tileParts, pondsQuery, parsePonds, TILE, tileCell, tileKey, tileRegion, tileRect, loadTile, COLORS };
 });
